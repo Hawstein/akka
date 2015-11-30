@@ -111,8 +111,8 @@ private[http] object HttpServerBluePrint {
         .flatMapConcat(ConstantFun.scalaIdentityFunction)
         .via(Flow[ResponseRenderingOutput].transform(() ⇒ errorLogger(log, "Outgoing response stream error")).named("errorLogger"))
 
-    BidiFlow.fromGraph(FlowGraph.create() { implicit b ⇒
-      import FlowGraph.Implicits._
+    BidiFlow.fromGraph(GraphDSL.create() { implicit b ⇒
+      import GraphDSL.Implicits._
 
       // HTTP
       val requestParsing = b.add(requestParsingFlow)
