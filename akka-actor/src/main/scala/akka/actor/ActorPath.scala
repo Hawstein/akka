@@ -234,6 +234,8 @@ sealed trait ActorPath extends Comparable[ActorPath] with Serializable {
    * INTERNAL API
    * Unique identifier of the actor. Used for distinguishing
    * different incarnations of actors with same path (name elements).
+   *
+   * actor 的唯一标识符, 用它可以区分同一个 path 下不同的 actor 实体(actor 重启后 path 相同, 但 uid 不同)
    */
   private[akka] def uid: Int
 

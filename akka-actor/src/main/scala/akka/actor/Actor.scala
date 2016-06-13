@@ -12,16 +12,21 @@ import scala.beans.BeanProperty
 import scala.util.control.NoStackTrace
 import java.util.Optional
 
+// Done by Hawstein
 /**
  * INTERNAL API
  *
  * Marker trait to show which Messages are automatically handled by Akka
+ *
+ * 这个 trait 用于标志哪些消息可以自动由 Akka 处理, 如: Kill/PoisonPill 等等这些预定义的消息
  */
 private[akka] trait AutoReceivedMessage extends Serializable
 
 /**
  * Marker trait to indicate that a message might be potentially harmful,
  * this is used to block messages coming in over remoting.
+ *
+ * 这个 trait 用于标志具有潜在危害的信息, 用于阻止远程发来的潜在危害信息
  */
 trait PossiblyHarmful
 
@@ -34,6 +39,8 @@ abstract class PoisonPill extends AutoReceivedMessage with PossiblyHarmful with 
 
 /**
  * A message all Actors will understand, that when processed will terminate the Actor permanently.
+ *
+ * PoisonPill 信息用于杀掉 actor, 杀掉前会把 mailbox 里 PoisonPill 之前的信息都处理完.
  */
 @SerialVersionUID(1L)
 case object PoisonPill extends PoisonPill {
@@ -47,6 +54,8 @@ abstract class Kill extends AutoReceivedMessage with PossiblyHarmful
 /**
  * A message all Actors will understand, that when processed will make the Actor throw an ActorKilledException,
  * which will trigger supervision.
+ *
+ * Kill 信息会使 actor 抛出 ActorKilledException 异常, 触发监管程序
  */
 @SerialVersionUID(1L)
 case object Kill extends Kill {
@@ -254,6 +263,8 @@ final case class InvalidMessageException private[akka] (message: String) extends
 /**
  * A DeathPactException is thrown by an Actor that receives a Terminated(someActor) message
  * that it doesn't handle itself, effectively crashing the Actor and escalating to the supervisor.
+ *
+ * 如果 actor 收到 Terminated(someActor) 信息并且自己不处理, 就会抛出 DeathPactException 异常, 传递到它的监管者
  */
 @SerialVersionUID(1L)
 final case class DeathPactException private[akka] (dead: ActorRef)
@@ -305,6 +316,8 @@ object Status {
  *   }
  * }
  * }}}
+ *
+ * ActorLogging 是一个 log wrapper, 打印的日志带有更丰富的 actor 层级信息
  */
 trait ActorLogging { this: Actor ⇒
   private var _log: LoggingAdapter = _
@@ -352,6 +365,8 @@ trait DiagnosticActorLogging extends Actor {
 object Actor {
   /**
    * Type alias representing a Receive-expression for Akka Actors.
+   *
+   * Receive 是一个 Any => Unit 的 Partial Function
    */
   //#receive
   type Receive = PartialFunction[Any, Unit]
@@ -360,6 +375,8 @@ object Actor {
 
   /**
    * emptyBehavior is a Receive-expression that matches no messages at all, ever.
+   *
+   * 空行为, 不匹配任何信息
    */
   @SerialVersionUID(1L)
   object emptyBehavior extends Receive {
@@ -369,6 +386,8 @@ object Actor {
 
   /**
    * ignoringBehavior is a Receive-expression that consumes and ignores all messages.
+   *
+   * 匹配任何信息并忽略它们, 啥事也不做
    */
   @SerialVersionUID(1L)
   object ignoringBehavior extends Receive {
@@ -448,6 +467,7 @@ object Actor {
 trait Actor {
 
   // to make type Receive known in subclasses without import
+  // 通过这种方式, 继承了 Actor 的类无需 import 即可使用 Receive
   type Receive = Actor.Receive
 
   /**
@@ -460,6 +480,9 @@ trait Actor {
    * [[akka.actor.ActorContext]] is the Scala API. `getContext` returns a
    * [[akka.actor.AbstractActor.ActorContext]], which is the Java API of the actor
    * context.
+   *
+   * context 是 ThreadLocal[List[ActorContext]] 的头部元素.
+   * 创建完 actor 完后会把一个 ActorContext 放到 contextStack 里, 取出来后, 通过往 contextStack 头部插入 null 标志位表示已取出.
    */
   implicit val context: ActorContext = {
     val contextStack = ActorCell.contextStack.get
@@ -474,6 +497,8 @@ trait Actor {
 
   /**
    * The 'self' field holds the ActorRef for this actor.
+   *
+   * self 指向 ActorRef
    * <p/>
    * Can be used to send messages to itself:
    * <pre>
@@ -489,12 +514,16 @@ trait Actor {
    *
    * WARNING: Only valid within the Actor itself, so do not close over it and
    * publish it to other threads!
+   *
+   *
    */
   final def sender(): ActorRef = context.sender()
 
   /**
    * Scala API: This defines the initial actor behavior, it must return a partial function
    * with the actor logic.
+   *
+   * actor 的初始行为, 是一个 Any => Unit 的偏函数
    */
   //#receive
   def receive: Actor.Receive
@@ -507,6 +536,8 @@ trait Actor {
    *
    * @param receive current behavior.
    * @param msg current message.
+   *
+   * 在 ActorCell.receiveMessage 中使用, mailbox 中进行消息处理时会用到
    */
   protected[akka] def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
     // optimization: avoid allocation of lambda
@@ -573,6 +604,8 @@ trait Actor {
    * <p/>
    * Is called on a crashed Actor right BEFORE it is restarted to allow clean
    * up of resources before Actor is terminated.
+   *
+   * actor 重启前要做的事情, 这里会先 unwatch 并杀掉所有的子 actor, 再调用 postStop 方法
    */
   @throws(classOf[Exception]) // when changing this you MUST also change ActorDocTest
   //#lifecycle-hooks
@@ -591,6 +624,8 @@ trait Actor {
    * @param reason the Throwable that caused the restart to happen
    * <p/>
    * Is called right AFTER restart on the newly created Actor to allow reinitialization after an Actor crash.
+   *
+   * actor 重启后要做的事情
    */
   @throws(classOf[Exception]) // when changing this you MUST also change ActorDocTest
   //#lifecycle-hooks
@@ -606,6 +641,8 @@ trait Actor {
    * by default it fails with either a [[akka.actor.DeathPactException]] (in
    * case of an unhandled [[akka.actor.Terminated]] message) or publishes an [[akka.actor.UnhandledMessage]]
    * to the actor's system's [[akka.event.EventStream]]
+   *
+   * actor 定义的行为中没有处理的消息会由 unhandled 处理
    */
   def unhandled(message: Any): Unit = {
     message match {

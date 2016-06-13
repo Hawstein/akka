@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater
  *                   mailbox, without checking the mailboxes of other actors. Zero or negative means the dispatcher
  *                   always continues until the mailbox is empty.
  *                   Larger values (or zero or negative) increase throughput, smaller values increase fairness
+ *
+ * 基于事件的 Dispatcher 将一组 actors 绑定到一个线程池
  */
 class Dispatcher(
   _configurator:                  MessageDispatcherConfigurator,
@@ -48,6 +50,9 @@ class Dispatcher(
 
   /**
    * INTERNAL API
+   *
+   * 收到消息时, 将消息加入到接收者的 mailbox, 然后触发一次处理
+   * dispatch 处理用户定义的消息
    */
   protected[akka] def dispatch(receiver: ActorCell, invocation: Envelope): Unit = {
     val mbox = receiver.mailbox
@@ -56,6 +61,7 @@ class Dispatcher(
   }
 
   /**
+   * systemDispatch 处理系统消息
    * INTERNAL API
    */
   protected[akka] def systemDispatch(receiver: ActorCell, invocation: SystemMessage): Unit = {
@@ -107,6 +113,13 @@ class Dispatcher(
    * Returns if it was registered
    *
    * INTERNAL API
+   *
+   * 处理 mailbox 中的信息, mailbox 实现了 Runnalbe 接口, 然后通过 ExecutorService 调用执行
+   *
+   * @param mbox 需要在线程池里处理的邮箱
+   * @param hasMessageHint 是否是用户定义的消息
+   * @param hasSystemMessageHint 是否是系统消息
+   * @return
    */
   protected[akka] override def registerForExecution(mbox: Mailbox, hasMessageHint: Boolean, hasSystemMessageHint: Boolean): Boolean = {
     if (mbox.canBeScheduledForExecution(hasMessageHint, hasSystemMessageHint)) { //This needs to be here to ensure thread safety and no races

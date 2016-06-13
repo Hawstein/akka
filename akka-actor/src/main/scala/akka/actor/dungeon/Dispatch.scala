@@ -20,12 +20,15 @@ import akka.serialization.SerializerWithStringManifest
 import akka.dispatch.UnboundedMailbox
 import akka.serialization.DisabledJavaSerializer
 
-private[akka] trait Dispatch { this: ActorCell ⇒
+private[akka] trait Dispatch {
+  this: ActorCell ⇒
 
   @volatile private var _mailboxDoNotCallMeDirectly: Mailbox = _ //This must be volatile since it isn't protected by the mailbox status
 
+  // 初始化邮箱
   @inline final def mailbox: Mailbox = Unsafe.instance.getObjectVolatile(this, AbstractActorCell.mailboxOffset).asInstanceOf[Mailbox]
 
+  // 通过 CAS 设置当前邮箱
   @tailrec final def swapMailbox(newMailbox: Mailbox): Mailbox = {
     val oldMailbox = mailbox
     if (!Unsafe.instance.compareAndSwapObject(this, AbstractActorCell.mailboxOffset, oldMailbox, newMailbox)) swapMailbox(newMailbox)
@@ -42,11 +45,15 @@ private[akka] trait Dispatch { this: ActorCell ⇒
    * Initialize this cell, i.e. set up mailboxes and supervision. The UID must be
    * reasonably different from the previous UID of a possible actor with the same path,
    * which can be achieved by using ThreadLocalRandom.current.nextInt().
+   *
+   * 初始化 ActorCell, 设置 mailbox 以及监管者
    */
   final def init(sendSupervise: Boolean, mailboxType: MailboxType): this.type = {
     /*
      * Create the mailbox and enqueue the Create() message to ensure that
      * this is processed before anything else.
+     *
+     * 创建邮箱, 然后将 Create 消息放入邮箱, 用于创建 actor
      */
     val mbox = dispatcher.createMailbox(this, mailboxType)
 
@@ -61,9 +68,10 @@ private[akka] trait Dispatch { this: ActorCell ⇒
     val createMessage = mailboxType match {
       case _: ProducesMessageQueue[_] if system.mailboxes.hasRequiredType(actorClass) ⇒
         val req = system.mailboxes.getRequiredType(actorClass)
-        if (req isInstance mbox.messageQueue) Create(None)
+        if (req isInstance mbox.messageQueue) Create(None) // 没有异常的创建消息
         else {
           val gotType = if (mbox.messageQueue == null) "null" else mbox.messageQueue.getClass.getName
+          // 还有邮箱类型不匹配异常的创建消息
           Create(Some(ActorInitializationException(
             self,
             s"Actor [$self] requires mailbox type [$req] got [$gotType]")))
@@ -72,13 +80,18 @@ private[akka] trait Dispatch { this: ActorCell ⇒
     }
 
     swapMailbox(mbox)
-    mailbox.setActor(this)
+    mailbox.setActor(this) // 将邮箱和当前 actorCell 关联起来, 逻辑上 actorCell 是邮箱的一个属性
 
     // ➡➡➡ NEVER SEND THE SAME SYSTEM MESSAGE OBJECT TO TWO ACTORS ⬅⬅⬅
+    /**
+     * 将创建消息放入系统队列
+     * 默认实现: [[akka.dispatch.DefaultSystemMessageQueue.systemEnqueue]]
+     */
     mailbox.systemEnqueue(self, createMessage)
 
     if (sendSupervise) {
       // ➡➡➡ NEVER SEND THE SAME SYSTEM MESSAGE OBJECT TO TWO ACTORS ⬅⬅⬅
+      // 让该 actorCell 的 parent 监管它
       parent.sendSystemMessage(akka.dispatch.sysmsg.Supervise(self, async = false))
     }
     this
@@ -96,6 +109,7 @@ private[akka] trait Dispatch { this: ActorCell ⇒
 
   /**
    * Start this cell, i.e. attach it to the dispatcher.
+   * 将当前 acotrCell attach 到 dispatcher 以启动 actor
    */
   def start(): this.type = {
     // This call is expected to start off the actor by scheduling its mailbox.
@@ -127,6 +141,7 @@ private[akka] trait Dispatch { this: ActorCell ⇒
   // ➡➡➡ NEVER SEND THE SAME SYSTEM MESSAGE OBJECT TO TWO ACTORS ⬅⬅⬅
   final def stop(): Unit = try dispatcher.systemDispatch(this, Terminate()) catch handleException
 
+  // 发送用户消息的默认实现
   def sendMessage(msg: Envelope): Unit =
     try {
       val msgToDispatch =
@@ -172,6 +187,7 @@ private[akka] trait Dispatch { this: ActorCell ⇒
     }
   }
 
+  // 发送系统消息的默认实现
   override def sendSystemMessage(message: SystemMessage): Unit = try dispatcher.systemDispatch(this, message) catch handleException
 
 }

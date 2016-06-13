@@ -50,6 +50,7 @@ object ThreadPoolConfig {
 
 /**
  * Function0 without the fun stuff (mostly for the sake of the Java API side of things)
+ * 具体实现有: [[akka.dispatch.ForkJoinExecutorConfigurator.ForkJoinExecutorServiceFactory]] 和 [[ThreadPoolConfig.ThreadPoolExecutorServiceFactory]]
  */
 trait ExecutorServiceFactory {
   def createExecutorService: ExecutorService

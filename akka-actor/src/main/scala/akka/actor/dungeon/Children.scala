@@ -38,6 +38,13 @@ private[akka] trait Children { this: ActorCell ⇒
   }
   def findChild(name: String): Optional[ActorRef] = Optional.ofNullable(getChild(name))
 
+  /**
+   * context.actorOf 的默认实现, 通过将 Children mix in 到 [[ActorCell]] 里来实现访问
+   * 最终会调用 LocalActorRefProvider/RemoteActorRefProvider 的 actorOf
+   *
+   * 调用关系:
+   * context.actorOf -> Children.actorOf -> (LocalActorRefProvider|RemoteActorRefProvider).actorOf
+   */
   def actorOf(props: Props): ActorRef =
     makeChild(this, props, randomName(), async = false, systemService = false)
   def actorOf(props: Props, name: String): ActorRef =
@@ -241,7 +248,17 @@ private[akka] trait Children { this: ActorCell ⇒
     }
   }
 
+  /**
+   *
+   * @param cell 该 Children mix in 的 ActorCell
+   * @param props 创建具体 actor 的配置对象
+   * @param name actor 的名字
+   * @param async
+   * @param systemService
+   * @return
+   */
   private def makeChild(cell: ActorCell, props: Props, name: String, async: Boolean, systemService: Boolean): ActorRef = {
+    // 对于有序列化要求的(配置了序列化所有创建者 && 非系统服务 && 全局 scope), 要做序列化检查
     if (cell.system.settings.SerializeAllCreators && !systemService && props.deploy.scope != LocalScope)
       try {
         val ser = SerializationExtension(cell.system)
@@ -249,6 +266,7 @@ private[akka] trait Children { this: ActorCell ⇒
           arg == null ||
             arg.isInstanceOf[NoSerializationVerificationNeeded] ||
             {
+              // 验证是否能成功地序列化及反序列化
               val o = arg.asInstanceOf[AnyRef]
               val serializer = ser.findSerializerFor(o)
               val bytes = serializer.toBinary(o)
@@ -266,6 +284,8 @@ private[akka] trait Children { this: ActorCell ⇒
     /*
      * in case we are currently terminating, fail external attachChild requests
      * (internal calls cannot happen anyway because we are suspended)
+     *
+     * actor 在终止时, 不能创建子 actor
      */
     if (cell.childrenRefs.isTerminating) throw new IllegalStateException("cannot create children while terminating or terminated")
     else {
@@ -273,7 +293,9 @@ private[akka] trait Children { this: ActorCell ⇒
       // this name will either be unreserved or overwritten with a real child below
       val actor =
         try {
+          // 创建子 actor 的层级路径
           val childPath = new ChildActorPath(cell.self.path, name, ActorCell.newUid())
+          // 调用 LocalActorRefProvider/RemoteActorRefProvider 的 actorOf
           cell.provider.actorOf(cell.systemImpl, props, cell.self, childPath,
             systemService = systemService, deploy = None, lookupDeploy = true, async = async)
         } catch {
@@ -288,6 +310,9 @@ private[akka] trait Children { this: ActorCell ⇒
       // mailbox==null during RoutedActorCell constructor, where suspends are queued otherwise
       if (mailbox ne null) for (_ ← 1 to mailbox.suspendCount) actor.suspend()
       initChild(actor)
+      // 启动 actor,
+      // -> LocalActorRef.start -> ActorCell.start(使用 mixin 的 Dispatcher.start)
+      // -> RemoteActorRef.start
       actor.start()
       actor
     }

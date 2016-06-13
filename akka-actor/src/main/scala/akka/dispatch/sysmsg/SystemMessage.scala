@@ -183,6 +183,8 @@ private[akka] class EarliestFirstSystemMessageList(val head: SystemMessage) exte
  * INTERNAL API
  *
  * <b>NEVER SEND THE SAME SYSTEM MESSAGE OBJECT TO TWO ACTORS</b>
+ *
+ * 系统消息会做特殊处理, 在 actor 的 mailbox 中, 它们有自己的队列
  */
 private[akka] sealed trait SystemMessage extends PossiblyHarmful with Serializable {
   // Next fields are only modifiable via the SystemMessageList value class

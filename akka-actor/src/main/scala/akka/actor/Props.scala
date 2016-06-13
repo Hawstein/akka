@@ -109,6 +109,8 @@ object Props extends AbstractProps {
  *  final Props otherProps = props.withDispatcher("dispatcher-id");
  *  final Props otherProps = props.withDeploy(<deployment info>);
  * }}}
+ *
+ * Props 是用来创建 actor 的配置对象, 它是线程安全的
  */
 @SerialVersionUID(2L)
 final case class Props(deploy: Deploy, clazz: Class[_], args: immutable.Seq[Any]) {
@@ -208,6 +210,8 @@ final case class Props(deploy: Deploy, clazz: Class[_], args: immutable.Seq[Any]
    * Create a new actor instance. This method is only useful when called during
    * actor creation by the ActorSystem, i.e. for user-level code it can only be
    * used within the implementation of [[IndirectActorProducer#produce]].
+   *
+   * 创建一个新的 actor 实例
    */
   private[akka] def newActor(): Actor = {
     producer.produce()

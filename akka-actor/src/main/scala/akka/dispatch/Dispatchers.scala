@@ -53,6 +53,9 @@ object Dispatchers {
  *
  * Look in `akka.actor.default-dispatcher` section of the reference.conf
  * for documentation of dispatcher options.
+ *
+ * Dispatchers 用于从配置文件中读取 dispatcher 配置, 通过 lookup 方法来创建一个 dispatcher
+ * dispatcher 配置可参考默认配置: akka.actor.default-dispatcher
  */
 class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: DispatcherPrerequisites) {
 
@@ -83,6 +86,8 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    * This does not guarantee that no ConfigurationException will be thrown when
    * using this dispatcher, because the details can only be checked by trying
    * to instantiate it, which might be undesirable when just checking.
+   *
+   * 检查配置中是否有该 dispatcher
    */
   def hasDispatcher(id: String): Boolean = dispatcherConfigurators.containsKey(id) || cachingConfig.hasPath(id)
 

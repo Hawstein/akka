@@ -23,6 +23,8 @@ object ActorRef {
   /**
    * Use this value as an argument to [[ActorRef#tell]] if there is not actor to
    * reply to (e.g. when sending from non-actor code).
+   *
+   * 默认为 null
    */
   final val noSender: ActorRef = Actor.noSender
 
@@ -97,6 +99,19 @@ object ActorRef {
  * If you need to keep track of actor references in a collection and do not care
  * about the exact actor incarnation you can use the ``ActorPath`` as key because
  * the unique id of the actor is not taken into account when comparing actor paths.
+ *
+ * ActorRef 可以从 [[akka.actor.ActorRefFactory.actorOf]] 获得, 由 ActorSystem 和 [[akka.actor.ActorContext]] 实现.
+ *
+ * ActorRef 是不可变且可序列化的, ActorRef 没有方法用于终止 actor, 可以使用 [[akka.actor.ActorRefFactory.stop]] 和
+ * 或发送 [[akka.actor.PoisonPill]] 来终止 actor.
+ *
+ * Actor 是可比较的, 具体相同 path 的 actor 是相等的, 前提是它们都是活着的,
+ * 如果一个 actor 重启, 那它的 ActorRef 也就变了, 因为 unique id 变了.
+ *
+ * 如果想保存一个 actor 的集合, 而又不关心 actor 是否重启过而使得 ActorRef 变了, 可以使用 ActorPath 做 key,
+ * 这样 unique id 就不会考虑进来了.
+ *
+ *
  */
 abstract class ActorRef extends java.lang.Comparable[ActorRef] with Serializable {
   scalaRef: InternalActorRef ⇒
@@ -108,6 +123,8 @@ abstract class ActorRef extends java.lang.Comparable[ActorRef] with Serializable
 
   /**
    * Comparison takes path and the unique id of the actor cell into account.
+   *
+   * 比较同时考虑了 path 和 unique id
    */
   final def compareTo(other: ActorRef) = {
     val x = this.path compareTo other.path
@@ -120,6 +137,8 @@ abstract class ActorRef extends java.lang.Comparable[ActorRef] with Serializable
    * semantics, including the sender reference if possible.
    *
    * Pass [[akka.actor.ActorRef]] `noSender` or `null` as sender if there is nobody to reply to
+   *
+   * ! 的实现可看 [[LocalActorRef.!]]
    */
   final def tell(msg: Any, sender: ActorRef): Unit = this.!(msg)(sender)
 
@@ -127,6 +146,8 @@ abstract class ActorRef extends java.lang.Comparable[ActorRef] with Serializable
    * Forwards the message and passes the original sender actor as the sender.
    *
    * Works, no matter whether originally sent with tell/'!' or ask/'?'.
+   *
+   * 转发消息, 并把消息的原始发送者作为 sender, 而不是把转发这条消息的 actor 作为 sender
    */
   def forward(message: Any)(implicit context: ActorContext) = tell(message, context.sender())
 
@@ -146,6 +167,8 @@ abstract class ActorRef extends java.lang.Comparable[ActorRef] with Serializable
 
   /**
    * Equals takes path and the unique id of the actor cell into account.
+   *
+   * Equals 函数会同时比较 path 和 uid
    */
   final override def equals(that: Any): Boolean = that match {
     case other: ActorRef ⇒ path.uid == other.path.uid && path == other.path
@@ -161,6 +184,8 @@ abstract class ActorRef extends java.lang.Comparable[ActorRef] with Serializable
  * This trait represents the Scala Actor API
  * There are implicit conversions in ../actor/Implicits.scala
  * from ActorRef -&gt; ScalaActorRef and back
+ *
+ * 在 [[akka.actor.actorRef2Scala]] 和 [[akka.actor.scala2ActorRef]] 中有 ActorRef 和 ScalaActorRef 的隐式转换
  */
 trait ScalaActorRef { ref: ActorRef ⇒
 
@@ -186,6 +211,8 @@ trait ScalaActorRef { ref: ActorRef ⇒
  * All ActorRefs have a scope which describes where they live. Since it is
  * often necessary to distinguish between local and non-local references, this
  * is the only method provided on the scope.
+ *
+ * 所有的 ActorRef 都有一个 scope, 表示它们是在本地还是远端
  */
 private[akka] trait ActorRefScope {
   def isLocal: Boolean
@@ -193,6 +220,8 @@ private[akka] trait ActorRefScope {
 
 /**
  * Refs which are statically known to be local inherit from this Scope
+ *
+ * LocalRef 表示该 ActorRef 是在本地
  */
 private[akka] trait LocalRef extends ActorRefScope {
   final def isLocal = true
@@ -204,6 +233,8 @@ private[akka] trait LocalRef extends ActorRefScope {
  * the feature that it starts out “not fully started” (but you can send to it),
  * which is why `isStarted` features here; it is not improbable that cluster
  * actor refs will have the same behavior.
+ *
+ * RepointableRef 表示可在运行时改变是否为本地 ActorRef, 因此 isLocal 是不稳定的
  */
 private[akka] trait RepointableRef extends ActorRefScope {
   def isStarted: Boolean
@@ -218,6 +249,8 @@ private[akka] trait RepointableRef extends ActorRefScope {
 private[akka] abstract class InternalActorRef extends ActorRef with ScalaActorRef { this: ActorRefScope ⇒
   /*
    * Actor life-cycle management, invoked only internally (in response to user requests via ActorContext).
+   *
+   * Actor 生命周期管理
    */
   def start(): Unit
   def resume(causedByFailure: Throwable): Unit
@@ -264,6 +297,9 @@ private[akka] abstract class InternalActorRef extends ActorRef with ScalaActorRe
  * LocalActorRef and RepointableActorRef. The former specializes the return
  * type of `underlying` so that follow-up calls can use invokevirtual instead
  * of invokeinterface.
+ *
+ * 所有 actor ref 的共有 trait.
+ * [[LocalActorRef]] 和 [[RepointableActorRef]] 都继承了它.
  */
 private[akka] abstract class ActorRefWithCell extends InternalActorRef { this: ActorRefScope ⇒
   def underlying: Cell
@@ -296,6 +332,8 @@ private[akka] case object Nobody extends MinimalActorRef {
  *  Local (serializable) ActorRef that is used when referencing the Actor on its "home" node.
  *
  *  INTERNAL API
+ *
+ *  LocalActorRef 将 ActorCell 包起来, 底层操作由 ActorCell 执行
  */
 private[akka] class LocalActorRef private[akka] (
   _system:           ActorSystemImpl,
@@ -306,7 +344,7 @@ private[akka] class LocalActorRef private[akka] (
   override val path: ActorPath)
   extends ActorRefWithCell with LocalRef {
 
-  /*
+  /**
    * Safe publication of this class’s fields is guaranteed by mailbox.setActor()
    * which is called indirectly from actorCell.init() (if you’re wondering why
    * this is at all important, remember that under the JMM final fields are only
@@ -315,6 +353,9 @@ private[akka] class LocalActorRef private[akka] (
    * This means that the result of newActorCell needs to be written to the val
    * actorCell before we call init and start, since we can start using "this"
    * object from another thread as soon as we run init.
+   *
+   * 创建一个 ActorCell, 然后调用 init 方法, 该方法的实现在 [[dungeon.Dispatch.init]]
+   *
    */
   private val actorCell: ActorCell = newActorCell(_system, this, _props, _dispatcher, _supervisor)
   actorCell.init(sendSupervise = true, _mailboxType)
@@ -395,12 +436,17 @@ private[akka] class LocalActorRef private[akka] (
 
   def underlying: ActorCell = actorCell
 
+  // 系统消息发送的具体实现
+  // LocalActorRef.sendSystemMessage -> Dispatcher.sendSystemMessage
   override def sendSystemMessage(message: SystemMessage): Unit = actorCell.sendSystemMessage(message)
 
+  // 用户消息发送的具体实现
+  // LocalActorRef.! -> ActorCell.sendMessage -> Dispatcher.sendMessage
   override def !(message: Any)(implicit sender: ActorRef = Actor.noSender): Unit = actorCell.sendMessage(message, sender)
 
   override def restart(cause: Throwable): Unit = actorCell.restart(cause)
 
+  // 序列化 actor ref
   @throws(classOf[java.io.ObjectStreamException])
   protected def writeReplace(): AnyRef = SerializedActorRef(this)
 }
@@ -441,6 +487,9 @@ private[akka] object SerializedActorRef {
  * Trait for ActorRef implementations where all methods contain default stubs.
  *
  * INTERNAL API
+ *
+ * 最小化的 ActorRef 实现, 所有的方法都有一个默认值
+ *
  */
 private[akka] trait MinimalActorRef extends InternalActorRef with LocalRef {
 

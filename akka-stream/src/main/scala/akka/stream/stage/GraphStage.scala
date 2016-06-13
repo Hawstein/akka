@@ -1320,6 +1320,8 @@ trait InHandler {
   /**
    * Called when the input port has a new element available. The actual element can be retrieved via the
    * [[GraphStageLogic.grab()]] method.
+   *
+   * 输入端口有一个可用新元素时会调用该接口, 可以用 [[GraphStageLogic.grab()]] 方法取得数据
    */
   @throws(classOf[Exception])
   def onPush(): Unit
@@ -1344,6 +1346,8 @@ trait OutHandler {
   /**
    * Called when the output port has received a pull, and therefore ready to emit an element, i.e. [[GraphStageLogic.push()]]
    * is now allowed to be called on this port.
+   *
+   * 输出口接收到一个「拉」的请求时会调用这个接口
    */
   @throws(classOf[Exception])
   def onPull(): Unit

@@ -112,7 +112,8 @@ object SupervisorStrategy extends SupervisorStrategyLowPriorityImplicits {
   /**
    * Stops the Actor
    */
-  case object Stop extends Directive
+  case object
+  Stop extends Directive
 
   /**
    * Escalates the failure to the supervisor of the supervisor,
@@ -151,6 +152,8 @@ object SupervisorStrategy extends SupervisorStrategyLowPriorityImplicits {
    * [[akka.actor.ActorKilledException]], or [[akka.actor.DeathPactException]] is
    * thrown. It will be restarted for other `Exception` types.
    * The error is escalated if it's a `Throwable`, i.e. `Error`.
+   *
+   * 默认的 Decider, Decider 是一个 Throwable => Directive 的偏函数
    */
   final val defaultDecider: Decider = {
     case _: ActorInitializationException ⇒ Stop
@@ -163,6 +166,8 @@ object SupervisorStrategy extends SupervisorStrategyLowPriorityImplicits {
    * When supervisorStrategy is not specified for an actor this
    * is used by default. OneForOneStrategy with decider defined in
    * [[#defaultDecider]].
+   *
+   * 父 actor 对子 actor 的默认的监管策略
    */
   final val defaultStrategy: SupervisorStrategy = {
     OneForOneStrategy()(defaultDecider)

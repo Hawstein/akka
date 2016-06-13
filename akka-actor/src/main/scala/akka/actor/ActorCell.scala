@@ -24,6 +24,7 @@ import akka.japi.pf.ReceiveBuilder
 import akka.actor.AbstractActor.Receive
 import akka.annotation.InternalApi
 
+// Done by Hawstein
 /**
  * The actor context - the view of the actor cell from the actor.
  * Exposes contextual information for the actor and the current message.
@@ -46,6 +47,8 @@ import akka.annotation.InternalApi
  * }}}
  *
  * Where no name is given explicitly, one will be automatically generated.
+ *
+ * ActorContext 用于存储 actor 的上下文信息, 其中定义的方法的具体实现在 [[ActorCell]] 及 [[akka.actor.dungeon]] 包中
  */
 trait ActorContext extends ActorRefFactory {
 
@@ -77,6 +80,10 @@ trait ActorContext extends ActorRefFactory {
    * Messages marked with [[NotInfluenceReceiveTimeout]] will not reset the timer. This can be useful when
    * `ReceiveTimeout` should be fired by external inactivity but not influenced by internal activity,
    * e.g. scheduled tick messages.
+   *
+   * 设置 receiveTimeout, 如果超过这个时间没有接收到任何消息, 则会触发一个 ReceiveTimeout 消息, 该 actor 要去处理这个消息.
+   * 消息如果 mix in 了 NotInfluenceReceiveTimeout 这个 trait, 则收到这类消息不会去重置 timer, 一般可用于内部那些不影响 timer 的消息,
+   * 比如说周期性的 tick 信息
    */
   def setReceiveTimeout(timeout: Duration): Unit
 
@@ -96,6 +103,10 @@ trait ActorContext extends ActorRefFactory {
    * The default of replacing the current behavior on the stack has been chosen to avoid memory
    * leaks in case client code is written without consulting this documentation first (i.e.
    * always pushing new behaviors and never issuing an `unbecome()`)
+   *
+   * 从当前行为切换到新的行为, discard 为 true 会用新的行为替换行为栈上的顶部元素, 为 false 则直接压入行为栈顶部
+   * discard 默认为 true, 为的是避免用户使用不当(没有使用 unbecome), 造成内在内存泄漏
+   * 默认实现 [[ActorCell.become]]
    */
   def become(behavior: Actor.Receive, discardOld: Boolean): Unit
 
@@ -106,6 +117,8 @@ trait ActorContext extends ActorRefFactory {
 
   /**
    * Returns the sender 'ActorRef' of the current message.
+   *
+   * 当前消息的发送者, 是一个 ActorRef
    */
   def sender(): ActorRef
 
@@ -119,6 +132,8 @@ trait ActorContext extends ActorRefFactory {
    * // should better be expressed as:
    * val goodLookup = context.child("kid")
    * }}}
+   *
+   * 返回所有受监管的子 actor, 想取具体的子 actor 推荐使用 context.child("kid"), 这样更快
    */
   def children: immutable.Iterable[ActorRef]
 
@@ -136,11 +151,15 @@ trait ActorContext extends ActorRefFactory {
   /**
    * The system that the actor belongs to.
    * Importing this member will place an implicit ActorSystem in scope.
+   *
+   * actor 所属的 ActorSystem
    */
   implicit def system: ActorSystem
 
   /**
    * Returns the supervising parent ActorRef.
+   *
+   * 返回监管者, 是一个 ActorRef
    */
   def parent: ActorRef
 
@@ -149,6 +168,8 @@ trait ActorContext extends ActorRefFactory {
    * This actor will receive a Terminated(subject) message when watched
    * actor is terminated.
    * @return the provided ActorRef
+   *
+   * 用该方法去监控其它 actor, 不需要是子 actor. 当被监控的 actor 终止时, 监控者会收到一个 Terminated(subject) 信息
    */
   def watch(subject: ActorRef): ActorRef
 
@@ -160,6 +181,8 @@ trait ActorContext extends ActorRefFactory {
 
   /**
    * ActorContexts shouldn't be Serializable
+   *
+   * ActorContexts 不可序列化, 避免对外传递
    */
   final protected def writeObject(o: ObjectOutputStream): Unit =
     throw new NotSerializableException("ActorContext is not serializable!")
@@ -250,6 +273,8 @@ private[akka] trait Cell {
   private[akka] def isTerminated: Boolean
   /**
    * The supervisor of this actor.
+   *
+   * [[ActorCell.parent]]
    */
   def parent: InternalActorRef
   /**
@@ -258,12 +283,16 @@ private[akka] trait Cell {
   def childrenRefs: ChildrenContainer
   /**
    * Get the stats for the named child, if that exists.
+   *
+   * 默认实现: [[dungeon.Children.getChildByName]]
    */
   def getChildByName(name: String): Option[ChildStats]
 
   /**
    * Method for looking up a single child beneath this actor.
    * It is racy if called from the outside.
+   *
+   * 默认实现: [[dungeon.Children.getSingleChild]]
    */
   def getSingleChild(name: String): InternalActorRef
 
@@ -271,6 +300,8 @@ private[akka] trait Cell {
    * Enqueue a message to be sent to the actor; may or may not actually
    * schedule the actor to run, depending on which type of cell it is.
    * Is only allowed to throw Fatal Throwables.
+   *
+   * 默认实现: [[dungeon.Dispatch.sendMessage]]
    */
   def sendMessage(msg: Envelope): Unit
 
@@ -291,16 +322,22 @@ private[akka] trait Cell {
   /**
    * Returns true if the actor is local, i.e. if it is actually scheduled
    * on a Thread in the current JVM when run.
+   *
+   * 默认实现: [[ActorCell.isLocal]]
    */
   def isLocal: Boolean
   /**
    * If the actor isLocal, returns whether "user messages" are currently queued,
    * “false” otherwise.
+   *
+   * 默认实现: [[dungeon.Dispatch.hasMessages]]
    */
   def hasMessages: Boolean
   /**
    * If the actor isLocal, returns the number of "user messages" currently queued,
    * which may be a costly operation, 0 otherwise.
+   *
+   * 默认实现: [[dungeon.Dispatch.numberOfMessages]]
    */
   def numberOfMessages: Int
   /**
@@ -315,6 +352,7 @@ private[akka] trait Cell {
  * for! (waves hand)
  */
 private[akka] object ActorCell {
+  // ThreadLocal 表示每个线程中有属于自己的 List[ActorContext] 互不影响, 是线程安全的
   val contextStack = new ThreadLocal[List[ActorContext]] {
     override def initialValue: List[ActorContext] = Nil
   }
@@ -330,6 +368,7 @@ private[akka] object ActorCell {
 
   final val terminatedProps: Props = Props((throw IllegalActorStateException("This Actor has been terminated")): Actor)
 
+  // 用 0 表示未定义的 uid
   final val undefinedUid = 0
 
   @tailrec final def newUid(): Int = {
@@ -358,6 +397,8 @@ private[akka] object ActorCell {
  * Everything in here is completely Akka PRIVATE. You will not find any
  * supported APIs in this place. This is not the API you were looking
  * for! (waves hand)
+ *
+ *
  */
 private[akka] class ActorCell(
   val system:      ActorSystemImpl,
@@ -374,6 +415,7 @@ private[akka] class ActorCell(
 
   import ActorCell._
 
+  // ActorCell 用于 local actor
   final def isLocal = true
 
   final def systemImpl = system
@@ -385,7 +427,9 @@ private[akka] class ActorCell(
   private[this] var _actor: Actor = _
   def actor: Actor = _actor
   protected def actor_=(a: Actor): Unit = _actor = a
+  // 当前处理的消息
   var currentMessage: Envelope = _
+  // 行为栈, 使用 List 存储
   private var behaviorStack: List[Actor.Receive] = emptyBehaviorStack
   private[this] var sysmsgStash: LatestFirstSystemMessageList = SystemMessageList.LNil
 
@@ -394,11 +438,13 @@ private[akka] class ActorCell(
   // Java API
   final def getSystem() = system
 
+  // 暂存系统消息
   protected def stash(msg: SystemMessage): Unit = {
     assert(msg.unlinked)
     sysmsgStash ::= msg
   }
 
+  // 取出所有暂存的系统消息
   private def unstashAll(): LatestFirstSystemMessageList = {
     val unstashed = sysmsgStash
     sysmsgStash = SystemMessageList.LNil
@@ -409,6 +455,7 @@ private[akka] class ActorCell(
    * MESSAGE PROCESSING
    */
   //Memory consistency is handled by the Mailbox (reading mailbox status then processing messages, then writing mailbox status
+  // Mailbox 中处理系统消息时, 会调用 systemInvoke
   final def systemInvoke(message: SystemMessage): Unit = {
     /*
      * When recreate/suspend/resume are received while restarting (i.e. between
@@ -451,7 +498,7 @@ private[akka] class ActorCell(
           case message: SystemMessage if shouldStash(message, currentState) ⇒ stash(message)
           case f: Failed ⇒ handleFailure(f)
           case DeathWatchNotification(a, ec, at) ⇒ watchedActorTerminated(a, ec, at)
-          case Create(failure) ⇒ create(failure)
+          case Create(failure) ⇒ create(failure) // 创建 actor, 创建完邮箱后放入的第一条消息
           case Watch(watchee, watcher) ⇒ addWatcher(watchee, watcher)
           case Unwatch(watchee, watcher) ⇒ remWatcher(watchee, watcher)
           case Recreate(cause) ⇒ faultRecreate(cause)
@@ -477,25 +524,29 @@ private[akka] class ActorCell(
   }
 
   //Memory consistency is handled by the Mailbox (reading mailbox status then processing messages, then writing mailbox status
+  // Mailbox 中处理消息时, 会调用 invoke
   final def invoke(messageHandle: Envelope): Unit = {
+    // 是否会影响 actor 中设置的 receiveTimeout
     val influenceReceiveTimeout = !messageHandle.message.isInstanceOf[NotInfluenceReceiveTimeout]
     try {
       currentMessage = messageHandle
-      if (influenceReceiveTimeout)
+      if (influenceReceiveTimeout) // 如果会影响 actor 中的 receiveTimeout 设置, 则先取消它(因为收到消息了), 下面会重置
         cancelReceiveTimeout()
       messageHandle.message match {
-        case msg: AutoReceivedMessage ⇒ autoReceiveMessage(messageHandle)
+        case msg: AutoReceivedMessage ⇒ autoReceiveMessage(messageHandle) // 处理预定义的消息
         case msg                      ⇒ receiveMessage(msg)
       }
+      // 处理完后设置当前消息为 null
       currentMessage = null // reset current message after successful invocation
     } catch handleNonFatalOrInterruptedException { e ⇒
       handleInvokeFailure(Nil, e)
     } finally {
       if (influenceReceiveTimeout)
-        checkReceiveTimeout // Reschedule receive timeout
+        checkReceiveTimeout // Reschedule receive timeout 重新设置 receiveTimeout
     }
   }
 
+  // 处理预定义的一些消息, 如 Terminated/Kill/PoisonPill 等
   def autoReceiveMessage(msg: Envelope): Unit = {
     if (system.settings.DebugAutoReceive)
       publish(Debug(self.path.toString, clazz(actor), "received AutoReceiveMessage " + msg))
@@ -516,10 +567,14 @@ private[akka] class ActorCell(
     else
       ActorSelection.deliverSelection(self, sender(), sel)
 
+  // 使用用户定义的行为来处理消息
+  // 用户可以定义多个行为, 放在一个 behaviorStack 中(是一个 List[Receive]),
+  // 使用头部行为处理当前消息
   final def receiveMessage(msg: Any): Unit = actor.aroundReceive(behaviorStack.head, msg)
 
   /*
    * ACTOR CONTEXT IMPLEMENTATION
+   * ActorContext.sender() 的实现, 当前消息的发送者
    */
 
   final def sender(): ActorRef = currentMessage match {
@@ -531,8 +586,10 @@ private[akka] class ActorCell(
   def become(behavior: Actor.Receive, discardOld: Boolean = true): Unit =
     behaviorStack = behavior :: (if (discardOld && behaviorStack.nonEmpty) behaviorStack.tail else behaviorStack)
 
+  // Java API
   def become(behavior: Procedure[Any]): Unit = become(behavior, discardOld = true)
 
+  // Java API
   def become(behavior: Procedure[Any], discardOld: Boolean): Unit =
     become({ case msg ⇒ behavior.apply(msg) }: Actor.Receive, discardOld)
 
@@ -548,25 +605,32 @@ private[akka] class ActorCell(
    */
 
   //This method is in charge of setting up the contextStack and create a new instance of the Actor
+  // 创建一个新的 Actor 实例, 并加多一个 ActorContext 到 contextStack 中
+  // 这里把 this (ActorCell) 加到 contextStack 中, 注意 ActorCell 也是一个 ActorContext
   protected def newActor(): Actor = {
     contextStack.set(this :: contextStack.get)
     try {
       behaviorStack = emptyBehaviorStack
+      // 创建一个新的 actor 实例
       val instance = props.newActor()
 
       if (instance eq null)
         throw ActorInitializationException(self, "Actor instance passed to actorOf can't be 'null'")
 
       // If no becomes were issued, the actors behavior is its receive method
+      // 如果没有触发 becomes, actor 的当前行为即它的 receive 方法
+      // !!! 非常关键的一步, 创建完 Actor 后把它默认的行为 receive 放到行为栈中
       behaviorStack = if (behaviorStack.isEmpty) instance.receive :: behaviorStack else behaviorStack
       instance
     } finally {
       val stackAfter = contextStack.get
+      // 将 null 标志及当前 context 从 contextStack 中去掉
       if (stackAfter.nonEmpty)
         contextStack.set(if (stackAfter.head eq null) stackAfter.tail.tail else stackAfter.tail) // pop null marker plus our context
     }
   }
 
+  // 创建 actor 并调用 preStart 方法
   protected def create(failure: Option[ActorInitializationException]): Unit = {
     def clearOutActorIfNonNull(): Unit = {
       if (actor != null) {
@@ -580,6 +644,7 @@ private[akka] class ActorCell(
     try {
       val created = newActor()
       actor = created
+      // 调用 actor 的 preStart方法
       created.aroundPreStart()
       checkReceiveTimeout
       if (system.settings.DebugLifecycle) publish(Debug(self.path.toString, clazz(created), "started (" + created + ")"))
@@ -602,6 +667,7 @@ private[akka] class ActorCell(
     }
   }
 
+  // 监管子 actor, 这是子 actor 创建后做的第一件事
   private def supervise(child: ActorRef, async: Boolean): Unit =
     if (!isTerminating) {
       // Supervise is the first thing we get from a new child, so store away the UID for later use in handleFailure()
@@ -639,6 +705,7 @@ private[akka] class ActorCell(
     }
 
   // logging is not the main purpose, and if it fails there’s nothing we can do
+  // 把 logEvent 发到 eventStream
   protected final def publish(e: LogEvent): Unit = try system.eventStream.publish(e) catch { case NonFatal(_) ⇒ }
 
   protected final def clazz(o: AnyRef): Class[_] = if (o eq null) this.getClass else o.getClass

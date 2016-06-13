@@ -125,6 +125,11 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
   @inline
   final def isScheduled: Boolean = (currentStatus & Scheduled) != 0
 
+  /**
+   *
+   * 通过 CAS 来更新状态
+   * mailboxStatusOffset 使用的值为 _statusDoNotCallMeDirectly, 默认为 0
+   */
   @inline
   protected final def updateStatus(oldStatus: Status, newStatus: Status): Boolean =
     Unsafe.instance.compareAndSwapInt(this, AbstractMailbox.mailboxStatusOffset, oldStatus, newStatus)
@@ -246,6 +251,9 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
 
   /**
    * Process the messages in the mailbox
+   *
+   * 处理 mailbox 中的信息, 如果没有定义 deadline 或是 deadline 还没到, 则一直处理邮箱中的信息,
+   * 直到处理完, 或 deadline 时间到, 才将当前线程交还
    */
   @tailrec private final def processMailbox(
     left:       Int  = java.lang.Math.max(dispatcher.throughput, 1),
@@ -420,6 +428,8 @@ class BoundedNodeMessageQueue(capacity: Int) extends AbstractBoundedNodeQueue[En
 private[akka] trait SystemMessageQueue {
   /**
    * Enqueue a new system message, e.g. by prepending atomically as new head of a single-linked list.
+   *
+   * 将一条系统消息放入队列, 默认实现: [[DefaultSystemMessageQueue.systemEnqueue]]
    */
   def systemEnqueue(receiver: ActorRef, message: SystemMessage): Unit
 
@@ -959,5 +969,7 @@ object BoundedControlAwareMailbox {
  *
  * The queue type of the created mailbox will be checked against the type T and actor creation will fail if it doesn't
  * fulfill the requirements.
+ *
+ * 该 trait 用于表示一个 actor 需要哪种类型的消息队列
  */
 trait RequiresMessageQueue[T]

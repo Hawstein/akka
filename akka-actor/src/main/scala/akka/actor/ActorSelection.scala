@@ -190,6 +190,8 @@ object ActorSelection {
    * INTERNAL API
    * The receive logic for ActorSelectionMessage. The idea is to recursively descend as far as possible
    * with local refs and hand over to that “foreign” child when we encounter it.
+   *
+   * 收到 ActorSelectionMessage 消息时的处理逻辑
    */
   private[akka] def deliverSelection(anchor: InternalActorRef, sender: ActorRef, sel: ActorSelectionMessage): Unit =
     if (sel.elements.isEmpty)

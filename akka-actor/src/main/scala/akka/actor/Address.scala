@@ -16,6 +16,8 @@ import scala.collection.immutable
  * This class is final to allow use as a case class (copy method etc.); if
  * for example a remote transport would want to associate additional
  * information with an address, then this must be done externally.
+ *
+ * Address 类指定了 actor 的物理位置
  */
 @SerialVersionUID(1L)
 final case class Address private (protocol: String, system: String, host: Option[String], port: Option[Int]) {
@@ -23,6 +25,9 @@ final case class Address private (protocol: String, system: String, host: Option
   // host.isDefined == hasGlobalScope
   // host.isEmpty == hasLocalScope
   // hasLocalScope == !hasGlobalScope
+  // 如果是全局地址, 则 host 是 defined 的
+  // 如果是局部地址, 则 host 为空
+  // 全局地址和局部地址是互斥的, 一个地址要么是局部地址, 要么是全局地址
 
   def this(protocol: String, system: String) = this(protocol, system, None, None)
   def this(protocol: String, system: String, host: String, port: Int) = this(protocol, system, Option(host), Some(port))
@@ -30,6 +35,9 @@ final case class Address private (protocol: String, system: String, host: Option
   /**
    * Returns true if this Address is only defined locally. It is not safe to send locally scoped addresses to remote
    * hosts. See also [[akka.actor.Address#hasGlobalScope]].
+   *
+   * 如果该地址只定义为局部的, 则返回 true.
+   * 将局部定义的地址发送到远程主机是不安全的, 因为无法保证唯一性.
    */
   def hasLocalScope: Boolean = host.isEmpty
 
@@ -37,6 +45,9 @@ final case class Address private (protocol: String, system: String, host: Option
    * Returns true if this Address is usable globally. Unlike locally defined addresses ([[akka.actor.Address#hasLocalScope]])
    * addresses of global scope are safe to sent to other hosts, as they globally and uniquely identify an addressable
    * entity.
+   *
+   * 如果该地址是全局可以使用的, 则返回 true.
+   * 将该地址发送到其它主机是安全的, 因为可以保证全局唯一性.
    */
   def hasGlobalScope: Boolean = host.isDefined
 
@@ -47,6 +58,7 @@ final case class Address private (protocol: String, system: String, host: Option
    * Returns the canonical String representation of this Address formatted as:
    *
    * `protocol://system@host:port`
+   *
    */
   @transient
   override lazy val toString: String = {

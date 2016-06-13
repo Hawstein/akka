@@ -126,6 +126,8 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
    * Attaches the specified actor instance to this dispatcher, which includes
    * scheduling it to run for the first time (Create() is expected to have
    * been enqueued by the ActorCell upon mailbox creation).
+   *
+   * attach 指定的 actor 实例到当前 dispatcher, 并调用第一次运行
    */
   final def attach(actor: ActorCell): Unit = {
     register(actor)

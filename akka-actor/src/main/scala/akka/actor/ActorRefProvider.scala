@@ -184,6 +184,9 @@ trait ActorRefProvider {
 /**
  * Interface implemented by ActorSystem and ActorContext, the only two places
  * from which you can get fresh actors.
+ *
+ * 这个接口由 ActorSystem 和 ActorContext 实现, 只有从这两个地方可以创建新的 actor(通过 actorOf 函数)
+ * 具体的 actorOf 实现为: [[ActorSystemImpl.actorOf]] 和 [[akka.actor.dungeon.Children.actorOf]]
  */
 @implicitNotFound("implicit ActorRefFactory required: if outside of an Actor you need an implicit ActorSystem, inside of an actor this should be the implicit ActorContext")
 trait ActorRefFactory {
@@ -331,6 +334,8 @@ trait ActorRefFactory {
    * internally). No attempt is made to verify the existence of any part of
    * the supplied path, it is recommended to send a message and gather the
    * replies in order to resolve the matching set of actors.
+   *
+   * 根据 path 来拿到 ActorSelection
    */
   def actorSelection(path: String): ActorSelection = path match {
     case RelativeActorPath(elems) ⇒
@@ -360,6 +365,8 @@ trait ActorRefFactory {
    * then that Actor is guaranteed to not process any further messages after
    * this call; please note that the processing of the current message will
    * continue, this method does not immediately terminate this actor.
+   *
+   * 具体实现在 [[ActorSystemImpl.stop]] 及 [[akka.actor.dungeon.Children.stop]]
    */
   def stop(actor: ActorRef): Unit
 }
@@ -388,8 +395,9 @@ private[akka] object SystemGuardian {
 
 private[akka] object LocalActorRefProvider {
 
-  /*
+  /**
    * Root and user guardian
+   * 用户 guardian
    */
   private class Guardian(override val supervisorStrategy: SupervisorStrategy) extends Actor
     with RequiresMessageQueue[UnboundedMessageQueueSemantics] {
@@ -400,6 +408,7 @@ private[akka] object LocalActorRefProvider {
     }
 
     // guardian MUST NOT lose its children during restart
+    // guardian 重启时不能丢掉子 actor, 因此这里要覆盖 Actor 的默认行为
     override def preRestart(cause: Throwable, msg: Option[Any]) {}
   }
 
@@ -417,6 +426,7 @@ private[akka] object LocalActorRefProvider {
         // time for the systemGuardian to stop, but first notify all the
         // termination hooks, they will reply with TerminationHookDone
         // and when all are done the systemGuardian is stopped
+        // 系统 guardian 终止前执行所有的 termination hooks, 当所有的 termination hooks 执行完后, 系统监护者就杀掉自己
         context.become(terminating)
         terminationHooks foreach { _ ! TerminationHook }
         stopWhenAllTerminationHooksDone()
@@ -430,6 +440,7 @@ private[akka] object LocalActorRefProvider {
         context watch sender()
     }
 
+    // 终止 terminate hook 的阶段
     def terminating: Receive = {
       case Terminated(a)       ⇒ stopWhenAllTerminationHooksDone(a)
       case TerminationHookDone ⇒ stopWhenAllTerminationHooksDone(sender())
@@ -447,6 +458,7 @@ private[akka] object LocalActorRefProvider {
       }
 
     // guardian MUST NOT lose its children during restart
+    // guardian 重启时不能丢掉子 actor, 因此这里要覆盖 Actor 的默认行为
     override def preRestart(cause: Throwable, msg: Option[Any]) {}
   }
 
@@ -469,6 +481,7 @@ private[akka] class LocalActorRefProvider private[akka] (
   extends ActorRefProvider {
 
   // this is the constructor needed for reflectively instantiating the provider
+  // 构造函数
   def this(
     _systemName:   String,
     settings:      ActorSystem.Settings,
@@ -715,6 +728,20 @@ private[akka] class LocalActorRefProvider private[akka] (
       case x ⇒ x
     }
 
+  /**
+   *
+   * 根据不同的情况, 可创建的 ActorRef 类型有: RepointableActorRef, LocalActorRef, RoutedActorRef
+   *
+   * @param system
+   * @param props
+   * @param supervisor
+   * @param path
+   * @param systemService
+   * @param deploy
+   * @param lookupDeploy
+   * @param async
+   * @return
+   */
   def actorOf(system: ActorSystemImpl, props: Props, supervisor: InternalActorRef, path: ActorPath,
               systemService: Boolean, deploy: Option[Deploy], lookupDeploy: Boolean, async: Boolean): InternalActorRef = {
     props.deploy.routerConfig match {
@@ -728,6 +755,7 @@ private[akka] class LocalActorRefProvider private[akka] (
 
         val props2 =
           // mailbox and dispatcher defined in deploy should override props
+          // 如果 deploy 配置中定义了 mailbox 及 dispatcher, 则用它们去覆盖 props 中的 mailbox 及 dispatcher
           (if (lookupDeploy) deployer.lookup(path) else deploy) match {
             case Some(d) ⇒
               (d.dispatcher, d.mailbox) match {
@@ -739,13 +767,16 @@ private[akka] class LocalActorRefProvider private[akka] (
             case _ ⇒ props // no deployment config found
           }
 
+        // 没有为该 actor 配置 dispatcher
         if (!system.dispatchers.hasDispatcher(props2.dispatcher))
           throw new ConfigurationException(s"Dispatcher [${props2.dispatcher}] not configured for path $path")
 
         try {
+          // 创建 dispatcher
           val dispatcher = system.dispatchers.lookup(props2.dispatcher)
           val mailboxType = system.mailboxes.getMailboxType(props2, dispatcher.configurator.config)
 
+          // 根据 async 标志的不同, 创建 RepointableActorRef 或 LocalActorRef
           if (async) new RepointableActorRef(system, props2, dispatcher, mailboxType, supervisor, path).initialize(async)
           else new LocalActorRef(system, props2, dispatcher, mailboxType, supervisor, path)
         } catch {
