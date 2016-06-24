@@ -479,6 +479,8 @@ abstract class ActorSystem extends ActorRefFactory {
   /**
    * Light-weight scheduler for running asynchronous tasks after some deadline
    * in the future. Not terribly precise but cheap.
+   *
+   * 默认实现 [[LightArrayRevolverScheduler]]
    */
   def scheduler: Scheduler
   //#scheduler
@@ -753,6 +755,9 @@ private[akka] class ActorSystemImpl(
 
   val mailboxes: Mailboxes = new Mailboxes(settings, eventStream, dynamicAccess, deadLetters)
 
+  /**
+   * 唯一创建 [[Dispatchers]] 的地方, 即创建 ActorSystem 的时候
+   */
   val dispatchers: Dispatchers = new Dispatchers(settings, DefaultDispatcherPrerequisites(
     threadFactory, eventStream, scheduler, dynamicAccess, settings, mailboxes, defaultExecutionContext))
 

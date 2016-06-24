@@ -308,6 +308,8 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
 
 /**
  * An ExecutorServiceConfigurator is a class that given some prerequisites and a configuration can create instances of ExecutorService
+ *
+ * ExecutorServiceConfigurator 类在拿到「配置」和「prerequisites」后可以创建 [[ExecutorService]] 实例: ForkJoin 或 ThreadPool
  */
 abstract class ExecutorServiceConfigurator(config: Config, prerequisites: DispatcherPrerequisites) extends ExecutorServiceFactoryProvider
 
@@ -325,6 +327,9 @@ abstract class MessageDispatcherConfigurator(_config: Config, val prerequisites:
    */
   def dispatcher(): MessageDispatcher
 
+  /**
+   * 根据配置里 executor 字符串的不同, 创建不同的 [[ExecutorServiceConfigurator]]
+   */
   def configureExecutor(): ExecutorServiceConfigurator = {
     def configurator(executor: String): ExecutorServiceConfigurator = executor match {
       case null | "" | "fork-join-executor" ⇒ new ForkJoinExecutorConfigurator(config.getConfig("fork-join-executor"), prerequisites)

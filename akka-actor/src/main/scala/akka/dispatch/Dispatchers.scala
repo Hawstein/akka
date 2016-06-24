@@ -28,6 +28,8 @@ trait DispatcherPrerequisites {
 
 /**
  * INTERNAL API
+ *
+ *
  */
 private[akka] final case class DefaultDispatcherPrerequisites(
   val threadFactory:           ThreadFactory,
@@ -42,6 +44,8 @@ object Dispatchers {
   /**
    * The id of the default dispatcher, also the full key of the
    * configuration of the default dispatcher.
+   *
+   * 默认 dispatcher 的 id
    */
   final val DefaultDispatcherId = "akka.actor.default-dispatcher"
 }
@@ -56,6 +60,8 @@ object Dispatchers {
  *
  * Dispatchers 用于从配置文件中读取 dispatcher 配置, 通过 lookup 方法来创建一个 dispatcher
  * dispatcher 配置可参考默认配置: akka.actor.default-dispatcher
+ *
+ * 唯一创建 Dispatchers 的地方在 [[akka.actor.ActorSystemImpl]], 即创建 ActorSystem 时从配置中创建 dispatchers
  */
 class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: DispatcherPrerequisites) {
 
@@ -68,6 +74,8 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
 
   /**
    * The one and only default dispatcher.
+   *
+   * 默认 dispatcher
    */
   def defaultGlobalDispatcher: MessageDispatcher = lookup(DefaultDispatcherId)
 
@@ -78,6 +86,9 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    * method _may_ create and return a NEW dispatcher, _every_ call.
    *
    * Throws ConfigurationException if the specified dispatcher cannot be found in the configuration.
+   *
+   * 返回配置中指定的一个 dispatcher, 每次调用会创建一个新的 dispatcher.
+   * 因此一般调用它拿到一个指定 dispatcher 后可作为全局变量使用
    */
   def lookup(id: String): MessageDispatcher = lookupConfigurator(id).dispatcher()
 
@@ -91,6 +102,8 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    */
   def hasDispatcher(id: String): Boolean = dispatcherConfigurators.containsKey(id) || cachingConfig.hasPath(id)
 
+  // 在 ConcurrentHashMap 里用 id 查找 dispatcher, 有则返回；
+  // 没有则查看是否有该 id 的配置, 有则创建, 没有则抛出异常
   private def lookupConfigurator(id: String): MessageDispatcherConfigurator = {
     dispatcherConfigurators.get(id) match {
       case null ⇒
@@ -172,6 +185,9 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    *
    * Throws: IllegalArgumentException if the value of "type" is not valid
    *         IllegalArgumentException if it cannot create the MessageDispatcherConfigurator
+   *
+   * 读取配置并创建一个 MessageDispatcherConfigurator
+   * 配置中必需指定 `id`
    */
   private def configuratorFrom(cfg: Config): MessageDispatcherConfigurator = {
     if (!cfg.hasPath("id")) throw new ConfigurationException("Missing dispatcher 'id' property in config: " + cfg.root.render)
@@ -202,6 +218,8 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
  * Configurator for creating [[akka.dispatch.Dispatcher]].
  * Returns the same dispatcher instance for for each invocation
  * of the `dispatcher()` method.
+ *
+ * 唯一使用地方: 上面的 configuratorFrom 函数.
  */
 class DispatcherConfigurator(config: Config, prerequisites: DispatcherPrerequisites)
   extends MessageDispatcherConfigurator(config, prerequisites) {

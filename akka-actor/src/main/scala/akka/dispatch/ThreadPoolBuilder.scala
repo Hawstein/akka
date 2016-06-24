@@ -183,6 +183,7 @@ final case class MonitorableThreadFactory(
   protected val counter: AtomicLong                      = new AtomicLong)
   extends ThreadFactory with ForkJoinPool.ForkJoinWorkerThreadFactory {
 
+  // No usages found in project files
   def newThread(pool: ForkJoinPool): ForkJoinWorkerThread = {
     val t = wire(new MonitorableThreadFactory.AkkaForkJoinWorkerThread(pool))
     // Name of the threads for the ForkJoinPool are not customizable. Change it here.
@@ -190,6 +191,9 @@ final case class MonitorableThreadFactory(
     t
   }
 
+  // 每 new 一个线程, name 后面的数字会加 1.
+  // 所以如果这个数字非常大, 说明 new 了非常多的线程, 但并不能说明此时系统里的总线程数量非常多,
+  // 因为 new 出来的线程会被回收
   def newThread(runnable: Runnable): Thread = wire(new Thread(runnable, name + "-" + counter.incrementAndGet()))
 
   def withName(newName: String): MonitorableThreadFactory = copy(newName)
