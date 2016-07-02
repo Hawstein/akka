@@ -13,8 +13,10 @@ import akka.ConfigurationException
 import akka.util.Helpers.ConfigOps
 import scala.concurrent.ExecutionContext
 
+// Done by Hawstein
 /**
  * DispatcherPrerequisites represents useful contextual pieces when constructing a MessageDispatcher
+ * 构建 [[MessageDispatcher]] 时所需要的上下文信息, 默认实现是 [[DefaultDispatcherPrerequisites]]
  */
 trait DispatcherPrerequisites {
   def threadFactory: ThreadFactory
@@ -61,14 +63,17 @@ object Dispatchers {
  * Dispatchers 用于从配置文件中读取 dispatcher 配置, 通过 lookup 方法来创建一个 dispatcher
  * dispatcher 配置可参考默认配置: akka.actor.default-dispatcher
  *
- * 唯一创建 Dispatchers 的地方在 [[akka.actor.ActorSystemImpl]], 即创建 ActorSystem 时从配置中创建 dispatchers
+ * 唯一创建 Dispatchers 的地方在 [[akka.actor.ActorSystemImpl.dispatchers]], 即创建 ActorSystem 时从配置中创建 dispatchers
  */
 class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: DispatcherPrerequisites) {
 
   import Dispatchers._
 
+  // 把 config wrap 到 CachingConfig 里加速 path 的查询(getPath) 和 string 的获取 getString
   val cachingConfig = new CachingConfig(settings.config)
 
+  // 先从项目的配置文件中拿默认 dispatcher 的配置,
+  // 如果没有, 再从 akka 项目中的默认配置中拿.
   val defaultDispatcherConfig: Config =
     idConfig(DefaultDispatcherId).withFallback(settings.config.getConfig(DefaultDispatcherId))
 
@@ -79,6 +84,11 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    */
   def defaultGlobalDispatcher: MessageDispatcher = lookup(DefaultDispatcherId)
 
+  /**
+   * 用于存储 dispatcherId 到相应配置 Map
+   * 通过 [[registerConfigurator]] 进入注册,
+   * [[lookupConfigurator]] 查询时, 如果是新创建的 MessageDispatcherConfigurator, 也会写入该 map
+   */
   private val dispatcherConfigurators = new ConcurrentHashMap[String, MessageDispatcherConfigurator]
 
   /**
@@ -102,7 +112,7 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    */
   def hasDispatcher(id: String): Boolean = dispatcherConfigurators.containsKey(id) || cachingConfig.hasPath(id)
 
-  // 在 ConcurrentHashMap 里用 id 查找 dispatcher, 有则返回；
+  // 在 ConcurrentHashMap 里用 id 查找 MessageDispatcherConfigurator, 有则返回；
   // 没有则查看是否有该 id 的配置, 有则创建, 没有则抛出异常
   private def lookupConfigurator(id: String): MessageDispatcherConfigurator = {
     dispatcherConfigurators.get(id) match {
@@ -134,12 +144,17 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    * it can not be replaced. It is safe to call this method multiple times,
    * but only the first registration will be used. This method returns `true` if
    * the specified configurator was successfully registered.
+   *
+   * 注册 [[MessageDispatcherConfigurator]] 到 dispatcherConfigurators 便于后续快速查询
+   * 每个 configurator 只有在第一次注册时才真正注册, 并且返回 null, 该函数返回 true.
+   * [[akka.routing.BalancingPool]] 使用了该函数
    */
   def registerConfigurator(id: String, configurator: MessageDispatcherConfigurator): Boolean =
     dispatcherConfigurators.putIfAbsent(id, configurator) == null
 
   /**
    * INTERNAL API
+   * 根据 id 拿 Config
    */
   private[akka] def config(id: String): Config = {
     config(id, settings.config.getConfig(id))
@@ -147,6 +162,7 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
 
   /**
    * INTERNAL API
+   * 根据 id 拿到一个 Config, 并且提供了几个 fallback
    */
   private[akka] def config(id: String, appConfig: Config): Config = {
     import scala.collection.JavaConverters._
@@ -157,6 +173,7 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
       .withFallback(defaultDispatcherConfig)
   }
 
+  // 根据 id 拿到一个 Config
   private def idConfig(id: String): Config = {
     import scala.collection.JavaConverters._
     ConfigFactory.parseMap(Map("id" → id).asJava)
@@ -173,6 +190,8 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
    *
    * Throws: IllegalArgumentException if the value of "type" is not valid
    *         IllegalArgumentException if it cannot create the MessageDispatcherConfigurator
+   *
+   * 给定 Config, 创建一个 dispatcher, 仅用于测试.
    */
   private[akka] def from(cfg: Config): MessageDispatcher = configuratorFrom(cfg).dispatcher()
 
@@ -219,7 +238,9 @@ class Dispatchers(val settings: ActorSystem.Settings, val prerequisites: Dispatc
  * Returns the same dispatcher instance for for each invocation
  * of the `dispatcher()` method.
  *
+ * 用于创建 [[Dispatcher]] 的配置
  * 唯一使用地方: 上面的 configuratorFrom 函数.
+ * 使用得最多的 DispatcherConfigurator, ForkJoinPool 和 ThreadPool 用的都是这个
  */
 class DispatcherConfigurator(config: Config, prerequisites: DispatcherPrerequisites)
   extends MessageDispatcherConfigurator(config, prerequisites) {

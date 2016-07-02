@@ -57,6 +57,7 @@ private[akka] object MessageDispatcher {
 
   // dispatcher debugging helper using println (see below)
   // since this is a compile-time constant, scalac will elide code behind if (MessageDispatcher.debug) (RK checked with 2.9.1)
+  // 调试用
   final val debug = false // Deliberately without type ascription to make it a compile-time constant
   lazy val actors = new Index[MessageDispatcher, ActorRef](16, new ju.Comparator[ActorRef] {
     override def compare(a: ActorRef, b: ActorRef): Int = a.compareTo(b)
@@ -81,6 +82,9 @@ private[akka] object MessageDispatcher {
     }
 }
 
+/**
+ * [[Dispatcher]] 的父类, 真正使用了 MessageDispatcher 的也就只有 [[Dispatcher]].(除开 [[akka.testkit.CallingThreadDispatcher]])
+ */
 abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator) extends AbstractMessageDispatcher with BatchingExecutor with ExecutionContextExecutor {
 
   import AbstractMessageDispatcher.{ inhabitantsOffset, shutdownScheduleOffset }
@@ -93,6 +97,7 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
   @volatile private[this] var _inhabitantsDoNotCallMeDirectly: Long = _ // DO NOT TOUCH!
   @volatile private[this] var _shutdownScheduleDoNotCallMeDirectly: Int = _ // DO NOT TOUCH!
 
+  // 增加 inhabitant 的数量
   private final def addInhabitants(add: Long): Long = {
     val old = Unsafe.instance.getAndAddLong(this, inhabitantsOffset, add)
     val ret = old + add
@@ -194,6 +199,7 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
    */
   protected[akka] def register(actor: ActorCell) {
     if (debug) actors.put(this, actor.self)
+    // inhabitant +1
     addInhabitants(+1)
   }
 
@@ -289,6 +295,8 @@ abstract class MessageDispatcher(val configurator: MessageDispatcherConfigurator
 
   /**
    * INTERNAL API
+   * 默认的 reference 设置: throughput-deadline-time = 0ms
+   * 即该值默认为 false
    */
   @inline protected[akka] final val isThroughputDeadlineTimeDefined = throughputDeadlineTime.toMillis > 0
 
@@ -315,6 +323,11 @@ abstract class ExecutorServiceConfigurator(config: Config, prerequisites: Dispat
 
 /**
  * Base class to be used for hooking in new dispatchers into Dispatchers.
+ * 该类负责把新的 dispatcher hook 到 Dispatchers 里, 有以下几个子类:
+ * [[DispatcherConfigurator]]
+ * [[BalancingDispatcherConfigurator]]
+ * [[PinnedDispatcherConfigurator]]
+ * 以前几个子类会 override dispatcher() 方法来产生具体的 [[MessageDispatcher]]
  */
 abstract class MessageDispatcherConfigurator(_config: Config, val prerequisites: DispatcherPrerequisites) {
 
@@ -324,6 +337,10 @@ abstract class MessageDispatcherConfigurator(_config: Config, val prerequisites:
    * Returns an instance of MessageDispatcher given the configuration.
    * Depending on the needs the implementation may return a new instance for
    * each invocation or return the same instance every time.
+   *
+   * 根据实现不同, 返回不同的 MessageDispatcher,
+   * 其中, [[DispatcherConfigurator]] 和 [[BalancingDispatcherConfigurator]] 每次会返回相同的实例
+   * [[PinnedDispatcherConfigurator]] 每次会返回一个新的实例
    */
   def dispatcher(): MessageDispatcher
 

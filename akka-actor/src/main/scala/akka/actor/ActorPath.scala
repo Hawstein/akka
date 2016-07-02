@@ -58,6 +58,9 @@ object ActorPath {
     case _                               ⇒ throw new MalformedURLException("cannot parse as ActorPath: " + s)
   }
 
+  /**
+   * Actor Path 能使用的特殊字符只有以下这些, 如果使用其它特殊字符来命名 actor name 就会抛 [[InvalidActorNameException]]
+   */
   private final val ValidSymbols = """-_.*$+:@&=,!~';"""
 
   private final val ValidPathCode = -1

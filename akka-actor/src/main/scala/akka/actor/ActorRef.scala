@@ -440,8 +440,10 @@ private[akka] class LocalActorRef private[akka] (
   // LocalActorRef.sendSystemMessage -> Dispatcher.sendSystemMessage
   override def sendSystemMessage(message: SystemMessage): Unit = actorCell.sendSystemMessage(message)
 
-  // 用户消息发送的具体实现
-  // LocalActorRef.! -> ActorCell.sendMessage -> Dispatcher.sendMessage
+  /**
+   * 用户消息发送的具体实现
+   * [[LocalActorRef.!]] -> [[ActorCell.sendMessage]] -> [[dungeon.Dispatch.sendMessage()]]
+   */
   override def !(message: Any)(implicit sender: ActorRef = Actor.noSender): Unit = actorCell.sendMessage(message, sender)
 
   override def restart(cause: Throwable): Unit = actorCell.restart(cause)

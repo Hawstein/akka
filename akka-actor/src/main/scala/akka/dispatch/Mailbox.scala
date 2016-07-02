@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
  */
 private[akka] object Mailbox {
 
+  // 邮箱状态是个 Int 值
   type Status = Int
 
   /*
@@ -72,20 +73,29 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
    * ends. The JMM guarantees visibility for final fields only after the end
    * of the constructor, so safe publication requires that THIS WRITE BELOW
    * stay as it is.
+   *
+   * 需要 actor 来实际 execute mailbox, actorCell 启动时, 需要调用 setActor 方法来设置此处的 actor
+   * 对于不需要 execute mailbox 的情况(比如对于 RepointableActorRef), actor 值为 null
    */
   @volatile
   var actor: ActorCell = _
+
+  /**
+   * 在 [[akka.actor.dungeon.Dispatch.init()]] 中调用
+   */
   def setActor(cell: ActorCell): Unit = actor = cell
 
   def dispatcher: MessageDispatcher = actor.dispatcher
 
   /**
    * Try to enqueue the message to this queue, or throw an exception.
+   * 往 mailbox 里放入消息
    */
   def enqueue(receiver: ActorRef, msg: Envelope): Unit = messageQueue.enqueue(receiver, msg)
 
   /**
    * Try to dequeue the next message from this queue, return null failing that.
+   * 从 mailbox 里取出消息
    */
   def dequeue(): Envelope = messageQueue.dequeue()
 
@@ -143,6 +153,8 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
    * status was Scheduled or not.
    *
    * @return true if the suspend count reached zero
+   *
+   * 减少挂起的数量
    */
   @tailrec
   final def resume(): Boolean = currentStatus match {
@@ -216,19 +228,27 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
     // Without calling .head the parameters would be boxed in SystemMessageList wrapper.
     Unsafe.instance.compareAndSwapObject(this, AbstractMailbox.systemMessageOffset, _old.head, _new.head)
 
+  // 判断是否可以调度执行
   final def canBeScheduledForExecution(hasMessageHint: Boolean, hasSystemMessageHint: Boolean): Boolean = currentStatus match {
     case Open | Scheduled ⇒ hasMessageHint || hasSystemMessageHint || hasSystemMessages || hasMessages
     case Closed           ⇒ false
     case _                ⇒ hasSystemMessageHint || hasSystemMessages
   }
 
+  /**
+   * Mailbox 实现了 Runnable 接口, 向线程池提交任务时, 执行 run 函数
+   * 线程池会拿出一条线程来执行 run 函数
+   */
   override final def run(): Unit = {
     try {
       if (!isClosed) { //Volatile read, needed here
+        // mailbox 不处于 closed 状态时, 先处理所有的系统消息
+        // 然后处理用户消息
         processAllSystemMessages() //First, deal with any system messages
         processMailbox() //Then deal with messages
       }
     } finally {
+      // 执行完后设置为 idle 状态并提交一次注册执行
       setAsIdle() //Volatile write, needed here
       dispatcher.registerForExecution(this, false, false)
     }
@@ -236,6 +256,8 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
 
   override final def getRawResult(): Unit = ()
   override final def setRawResult(unit: Unit): Unit = ()
+
+  // 暂时无用
   final override def exec(): Boolean = try { run(); false } catch {
     case ie: InterruptedException ⇒
       Thread.currentThread.interrupt()
@@ -252,8 +274,11 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
   /**
    * Process the messages in the mailbox
    *
-   * 处理 mailbox 中的信息, 如果没有定义 deadline 或是 deadline 还没到, 则一直处理邮箱中的信息,
-   * 直到处理完, 或 deadline 时间到, 才将当前线程交还
+   * 处理 mailbox 中的信息, 如果没有定义 deadline 或是 deadline 还没到, 则一直处理邮箱中的信息, 直到:
+   * 1. 如果定义了 throughput, 则连续处理 throughput 条消息后返回(都在一个线程中处理)
+   * 1. 如果没定义 throughput, 则处理 1 条消息后返回
+   * 1. 如果邮箱已经空了则返回
+   * 这期间如果 deadline 到了, 则停止处理
    */
   @tailrec private final def processMailbox(
     left:       Int  = java.lang.Math.max(dispatcher.throughput, 1),
@@ -265,6 +290,7 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
         actor invoke next
         if (Thread.interrupted())
           throw new InterruptedException("Interrupted while processing actor messages")
+        // 每处理完一条用户消息, 都要再处理一次全部的系统消息
         processAllSystemMessages()
         if ((left > 1) && ((dispatcher.isThroughputDeadlineTimeDefined == false) || (System.nanoTime - deadlineNs) < 0))
           processMailbox(left - 1, deadlineNs)
@@ -277,6 +303,8 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
    * restart here (failure is in ActorCell somewhere …). In case the mailbox
    * becomes closed (because of processing a Terminate message), dump all
    * already dequeued message to deadLetters.
+   *
+   * 处理所有队列里的系统消息.
    */
   final def processAllSystemMessages() {
     var interruption: Throwable = null
@@ -320,6 +348,8 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
    * Overridable callback to clean up the mailbox,
    * called when an actor is unregistered.
    * By default it dequeues all system messages + messages and ships them to the owning actors' systems' DeadLetterMailbox
+   *
+   * 清理 mailbox, actor unregistered 时会调用, 默认将所有的系统消息和用户消息发到自己 actor system 的 DeadLetterMailbox
    */
   protected[dispatch] def cleanUp(): Unit =
     if (actor ne null) { // actor is null for the deadLetterMailbox
@@ -342,6 +372,10 @@ private[akka] abstract class Mailbox(val messageQueue: MessageQueue)
  * A MessageQueue is one of the core components in forming an Akka Mailbox.
  * The MessageQueue is where the normal messages that are sent to Actors will be enqueued (and subsequently dequeued)
  * It needs to at least support N producers and 1 consumer thread-safely.
+ *
+ * MessageQueue 是 Akka mailbox 的核心组件, 它定义了一些接口, 不同的实现被用于不同的 mailbox 中,
+ * 具体可参见:
+ * http://doc.akka.io/docs/akka/current/scala/mailboxes.html#Builtin_Mailbox_Implementations
  */
 trait MessageQueue {
   /**
@@ -371,6 +405,8 @@ trait MessageQueue {
    * is expected to transfer all remaining messages into the dead letter queue
    * which is passed in. The owner of this MessageQueue is passed in if
    * available (e.g. for creating DeadLetters()), “/deadletters” otherwise.
+   *
+   * 当 mailbox 被销毁, 其对应的 MessageQueue 会调用 cleanUp, 将剩余的消息发到 dead letter
    */
   def cleanUp(owner: ActorRef, deadLetters: MessageQueue): Unit
 }
@@ -435,9 +471,13 @@ private[akka] trait SystemMessageQueue {
 
   /**
    * Dequeue all messages from system queue and return them as single-linked list.
+   * 将所有的系统消息都出队, 并以单链表的 List 返回, 默认实现 [[DefaultSystemMessageQueue.systemDrain()]]
    */
   def systemDrain(newContents: LatestFirstSystemMessageList): EarliestFirstSystemMessageList
 
+  /**
+   * 默认实现: [[DefaultSystemMessageQueue.hasSystemMessages]]
+   */
   def hasSystemMessages: Boolean
 }
 
@@ -484,6 +524,7 @@ trait MultipleConsumerSemantics
 
 /**
  * A QueueBasedMessageQueue is a MessageQueue backed by a java.util.Queue.
+ * 基于 java.util.Queue 的 MessageQueue
  */
 trait QueueBasedMessageQueue extends MessageQueue with MultipleConsumerSemantics {
   def queue: Queue[Envelope]
@@ -612,6 +653,8 @@ trait ProducesMessageQueue[T <: MessageQueue]
 
 /**
  * UnboundedMailbox is the default unbounded MailboxType used by Akka Actors.
+ *
+ * 默认的 mailbox 类型
  */
 final case class UnboundedMailbox() extends MailboxType with ProducesMessageQueue[UnboundedMailbox.MessageQueue] {
 

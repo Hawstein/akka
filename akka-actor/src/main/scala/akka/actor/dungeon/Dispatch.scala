@@ -109,7 +109,7 @@ private[akka] trait Dispatch {
 
   /**
    * Start this cell, i.e. attach it to the dispatcher.
-   * 将当前 acotrCell attach 到 dispatcher 以启动 actor
+   * 将当前 actorCell attach 到 dispatcher 以启动 actor
    */
   def start(): this.type = {
     // This call is expected to start off the actor by scheduling its mailbox.
@@ -148,6 +148,12 @@ private[akka] trait Dispatch {
         if (system.settings.SerializeAllMessages) serializeAndDeserialize(msg)
         else msg
 
+      /**
+       * this 即为 receiver, 是调用 ! 的 ActorRef.
+       * 具体实现:
+       * [[akka.dispatch.Dispatcher.dispatch()]]
+       * [[akka.dispatch.BalancingDispatcher.dispatch()]]
+       */
       dispatcher.dispatch(this, msgToDispatch)
     } catch handleException
 

@@ -13,6 +13,7 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater
 
+// Done by Hawstein
 /**
  * The event-based ``Dispatcher`` binds a set of Actors to a thread pool backed up by a
  * `BlockingQueue`.
@@ -25,7 +26,16 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater
  *                   always continues until the mailbox is empty.
  *                   Larger values (or zero or negative) increase throughput, smaller values increase fairness
  *
- * 基于事件的 Dispatcher 将一组 actors 绑定到一个线程池
+ * 基于事件的 Dispatcher 将一组 actors 绑定到一个线程池, 后面使用的是 BlockingQueue
+ * 创建 dispatchers 的推荐作法是在配置中定义它, 然后使用 lookup 方法来读取
+ * 使用参见: [[DispatcherConfigurator]]
+ *
+ * throughput: 该数值表示 dispatcher 一次性从 mailbox 中拿多少条信息进行处理.
+ * 0 或负数表示 dispatcher 会一直取信息直到 mailbox 为空.
+ * 增大该值会增加吞吐量, 减少该值会增加公平性(信息被拿到的概率趋向接近)
+ * 使用了 throughput 的地方:
+ * [[Mailbox.processMailbox]] (重点)
+ * [[akka.io.SelectionHandler]]
  */
 class Dispatcher(
   _configurator:                  MessageDispatcherConfigurator,
@@ -39,10 +49,21 @@ class Dispatcher(
   import configurator.prerequisites._
 
   private class LazyExecutorServiceDelegate(factory: ExecutorServiceFactory) extends ExecutorServiceDelegate {
+    /**
+     * 根据不同的实现, 拿到不同的 executor, 如:
+     * [[ForkJoinExecutorConfigurator.ForkJoinExecutorServiceFactory.createExecutorService]]
+     * [[ThreadPoolExecutorConfigurator.threadPoolConfig.ThreadPoolExecutorServiceFactory.createExecutorService]]
+     */
     lazy val executor: ExecutorService = factory.createExecutorService
     def copy(): LazyExecutorServiceDelegate = new LazyExecutorServiceDelegate(factory)
   }
 
+  /**
+   * 使用 LazyExecutorServiceDelegate wrap ExecutorServiceFactory, 将任务 delegate 给相应的 excutor
+   * createExecutorServiceFactory 的具体实现:
+   * [[ForkJoinExecutorConfigurator.createExecutorServiceFactory()]]
+   * [[ThreadPoolExecutorConfigurator.createExecutorServiceFactory()]]
+   */
   @volatile private var executorServiceDelegate: LazyExecutorServiceDelegate =
     new LazyExecutorServiceDelegate(executorServiceFactoryProvider.createExecutorServiceFactory(id, threadFactory))
 
@@ -53,21 +74,23 @@ class Dispatcher(
    *
    * 收到消息时, 将消息加入到接收者的 mailbox, 然后触发一次处理
    * dispatch 处理用户定义的消息
+   * 使用处: [[akka.actor.dungeon.Dispatch.sendMessage()]]
    */
   protected[akka] def dispatch(receiver: ActorCell, invocation: Envelope): Unit = {
     val mbox = receiver.mailbox
     mbox.enqueue(receiver.self, invocation)
-    registerForExecution(mbox, true, false)
+    registerForExecution(mbox, hasMessageHint = true, hasSystemMessageHint = false)
   }
 
   /**
-   * systemDispatch 处理系统消息
    * INTERNAL API
+   *
+   * systemDispatch 处理系统消息
    */
   protected[akka] def systemDispatch(receiver: ActorCell, invocation: SystemMessage): Unit = {
     val mbox = receiver.mailbox
     mbox.systemEnqueue(receiver.self, invocation)
-    registerForExecution(mbox, false, true)
+    registerForExecution(mbox, hasMessageHint = false, hasSystemMessageHint = true)
   }
 
   /**
@@ -90,6 +113,8 @@ class Dispatcher(
 
   /**
    * INTERNAL API
+   *
+   * 创建 mailbox
    */
   protected[akka] def createMailbox(actor: akka.actor.Cell, mailboxType: MailboxType): Mailbox = {
     new Mailbox(mailboxType.create(Some(actor.self), Some(actor.system))) with DefaultSystemMessageQueue
@@ -125,11 +150,17 @@ class Dispatcher(
     if (mbox.canBeScheduledForExecution(hasMessageHint, hasSystemMessageHint)) { //This needs to be here to ensure thread safety and no races
       if (mbox.setAsScheduled()) {
         try {
+          /**
+           * 向 executorService 提交任务, 具体实现:
+           * [[akka.dispatch.ForkJoinExecutorConfigurator.AkkaForkJoinPool.execute()]]
+           * [[java.util.concurrent.ThreadPoolExecutor.execute()]]
+           */
           executorService execute mbox
           true
         } catch {
           case e: RejectedExecutionException ⇒
             try {
+              // 重试一次
               executorService execute mbox
               true
             } catch { //Retry once
@@ -146,6 +177,7 @@ class Dispatcher(
   override val toString: String = Logging.simpleName(this) + "[" + id + "]"
 }
 
+// 暂无使用
 object PriorityGenerator {
   /**
    * Creates a PriorityGenerator that uses the supplied function as priority generator
@@ -155,6 +187,7 @@ object PriorityGenerator {
   }
 }
 
+// 暂无使用
 /**
  * A PriorityGenerator is a convenience API to create a Comparator that orders the messages of a
  * PriorityDispatcher

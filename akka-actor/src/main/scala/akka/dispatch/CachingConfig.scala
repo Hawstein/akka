@@ -38,6 +38,10 @@ private[akka] object CachingConfig {
  * selection code.
  *
  * All other Config operations are delegated to the wrapped Config.
+ *
+ * CachingConfig 是一个 Config 的 wrapper, 多提供一个 ConcurrentHashMap 来做 config path 的快速查询(因为该操作挺频繁的),
+ * 主要影响的两个操作: [[hasPath]] 和 [[getString]]
+ * 其它的操作则直接 delegate 给原来的 config
  */
 private[akka] class CachingConfig(_config: Config) extends Config {
 
@@ -91,6 +95,7 @@ private[akka] class CachingConfig(_config: Config) extends Config {
     else new CachingConfig(resolved)
   }
 
+  // 利用 entryMap 来加速
   def hasPath(path: String) = {
     val entry = getPathEntry(path)
     if (entry.valid)
@@ -115,6 +120,7 @@ private[akka] class CachingConfig(_config: Config) extends Config {
 
   def getDouble(path: String) = config.getDouble(path)
 
+  // 利用 entryMap 来加速
   def getString(path: String) = {
     getPathEntry(path) match {
       case StringPathEntry(_, _, _, string) ⇒
