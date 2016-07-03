@@ -33,6 +33,11 @@ import akka.dispatch.AbstractNodeQueue
  * delay to a full multiple of the TickDuration. This means that tasks are
  * scheduled possibly one tick later than they could be (if checking that
  * “now() + delay &lt;= nextTick” were done).
+ *
+ * 轻量的 Scheduler 实现, 类似 Netty 的 HashedWheelTimer, actor system 的默认 scheduler 实现
+ * 为的是可以为大量的 actor 提供 scheduler (比如 timeout)
+ * 它不是按照精确的时间来执行的, 而是按照配置的 interval 进行 tick, 每次 tick 会执行已经过期的任务.
+ * 精度可以通过调整 tick-duration 进行控制, 默认 10ms
  */
 class LightArrayRevolverScheduler(
   config:        Config,

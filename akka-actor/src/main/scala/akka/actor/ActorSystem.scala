@@ -278,6 +278,8 @@ object ActorSystem {
    * The system will use the passed in config, or falls back to the default reference configuration using the ClassLoader.
    *
    * @see <a href="http://typesafehub.github.io/config/v1.3.1/" target="_blank">The Typesafe Config Library API Documentation</a>
+   *
+   * 创建 ActorSystem 并启动的地方
    */
   def apply(
     name:                    String,
@@ -829,6 +831,9 @@ private[akka] class ActorSystemImpl(
    * Furthermore, this timer service MUST throw IllegalStateException if it
    * cannot schedule a task. Once scheduled, the task MUST be executed. If
    * executed upon close(), the task may execute before its timeout.
+   *
+   * 通过反射创建系统的 scheduler
+   * settings.SchedulerClass 的默认值: [[akka.actor.LightArrayRevolverScheduler]]
    */
   protected def createScheduler(): Scheduler =
     dynamicAccess.createInstanceFor[Scheduler](settings.SchedulerClass, immutable.Seq(
@@ -841,6 +846,8 @@ private[akka] class ActorSystemImpl(
    * This is called after the last actor has signaled its termination, i.e.
    * after the last dispatcher has had its chance to schedule its shutdown
    * action.
+   *
+   * 当最后一个 actor 终止时, 会调用 stopScheduler
    */
   protected def stopScheduler(): Unit = scheduler match {
     case x: Closeable ⇒ x.close()

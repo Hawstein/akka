@@ -8,11 +8,19 @@ import java.lang.reflect.InvocationTargetException
 import scala.reflect.ClassTag
 import scala.util.Try
 
+// Done by Hawstein
 /**
  * This is the default [[akka.actor.DynamicAccess]] implementation used by [[akka.actor.ExtendedActorSystem]]
  * unless overridden. It uses reflection to turn fully-qualified class names into `Class[_]` objects
  * and creates instances from there using `getDeclaredConstructor()` and invoking that. The class loader
  * to be used for all this is determined by the actor system’s class loader by default.
+ *
+ * [[akka.actor.DynamicAccess]] 的默认实现.
+ * 通过反射把完全限定类名转成 `Class[_]` 对象, 并通过 `getDeclaredConstructor()` 来创建相应实例.
+ * class loader 使用的是 actor system 的 class loader
+ * 两个使用的地方:
+ * [[ActorSystemImpl.createDynamicAccess]]
+ * [[akka.http.javadsl.server.directives.HeaderDirectives.headerValueByType]]
  */
 class ReflectiveDynamicAccess(val classLoader: ClassLoader) extends DynamicAccess {
 
