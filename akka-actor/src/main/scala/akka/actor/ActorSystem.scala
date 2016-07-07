@@ -132,6 +132,8 @@ final class BootstrapSetup private (
 
 }
 
+// Done by Hawstein
+
 object ActorSystem {
 
   val Version: String = akka.Version.current // generated file
@@ -148,6 +150,7 @@ object ActorSystem {
 
   val GlobalHome: Option[String] = SystemHome orElse EnvHome
 
+  // 以下一组 create 调用相应签名的 apply 方法
   /**
    * Creates a new ActorSystem with the name "default",
    * obtains the current ClassLoader by first inspecting the current threads' getContextClassLoader,
@@ -294,6 +297,8 @@ object ActorSystem {
    * For more detailed information about the different possible configuration options, look in the Akka Documentation under "Configuration"
    *
    * @see <a href="http://typesafehub.github.io/config/v1.3.1/" target="_blank">The Typesafe Config Library API Documentation</a>
+   *
+   * Settings 类在 ActorSystem 中提供便捷的方法来访问配置
    */
   class Settings(classLoader: ClassLoader, cfg: Config, final val name: String, val setup: ActorSystemSetup) {
 
@@ -463,6 +468,8 @@ abstract class ActorSystem extends ActorRefFactory {
 
   /**
    * Main event bus of this actor system, used for example for logging.
+   *
+   * actor system 的 event bus, 比如可用于打 log
    */
   def eventStream: EventStream
 
@@ -515,6 +522,9 @@ abstract class ActorSystem extends ActorRefFactory {
    * Throws a RejectedExecutionException if the System has already shut down or if shutdown has been initiated.
    *
    * Scala API
+   *
+   * 注册回调代码, 当 ActorSystem.shutdown 后执行, actor system 中的 actor 均被销毁.
+   * 执行顺序是注册顺序的逆序, 即最后注册的回调最先执行
    */
   def registerOnTermination[T](code: ⇒ T): Unit
 
@@ -588,11 +598,15 @@ abstract class ExtendedActorSystem extends ActorSystem {
 
   /**
    * The top-level supervisor of all actors created using system.actorOf(...).
+   *
+   * system.actorOf 创建出来的 actor 的最顶级监管者
    */
   def guardian: InternalActorRef
 
   /**
    * The top-level supervisor of all system-internal services like logging.
+   *
+   * actor system 内部服务(比如 logging) 的最顶级监管者
    */
   def systemGuardian: InternalActorRef
 
@@ -626,6 +640,8 @@ abstract class ExtendedActorSystem extends ActorSystem {
    * For debugging: traverse actor hierarchy and make string representation.
    * Careful, this may OOM on large actor systems, and it is only meant for
    * helping debugging in case something already went terminally wrong.
+   *
+   * 把 actor 系统的层级关系的字符串表示打印出来, 公用于调试
    */
   private[akka] def printTree: String
 
@@ -649,6 +665,7 @@ private[akka] class ActorSystemImpl(
   @volatile private var logDeadLetterListener: Option[ActorRef] = None
   final val settings: Settings = new Settings(classLoader, applicationConfig, name, setup)
 
+  // 未被捕获异常的处理
   protected def uncaughtExceptionHandler: Thread.UncaughtExceptionHandler =
     new Thread.UncaughtExceptionHandler() {
       def uncaughtException(thread: Thread, cause: Throwable): Unit = {
@@ -686,6 +703,7 @@ private[akka] class ActorSystemImpl(
       }
     }
 
+  // 用于创建 thread
   final val threadFactory: MonitorableThreadFactory =
     MonitorableThreadFactory(name, settings.Daemonicity, Option(classLoader), uncaughtExceptionHandler)
 
@@ -698,6 +716,8 @@ private[akka] class ActorSystemImpl(
   private val _pm: DynamicAccess = createDynamicAccess()
   def dynamicAccess: DynamicAccess = _pm
 
+  // 把 actor system 配置打印出来
+  // 如果配置了 akka.log-config-on-start, 就会调用这个方法
   def logConfiguration(): Unit = log.info(settings.toString)
 
   protected def systemImpl: ActorSystemImpl = this
@@ -731,14 +751,17 @@ private[akka] class ActorSystemImpl(
 
   val logFilter: LoggingFilter = {
     val arguments = Vector(classOf[Settings] → settings, classOf[EventStream] → eventStream)
+    // 通过反射来创建 logFilter, LoggingFilter 具体某个类的全限定名字符串
     dynamicAccess.createInstanceFor[LoggingFilter](LoggingFilter, arguments).get
   }
 
   private[this] val markerLogging = new MarkerLoggingAdapter(eventStream, getClass.getName + "(" + name + ")", this.getClass, logFilter)
   val log: LoggingAdapter = markerLogging
 
+  // 系统的 scheduler 是个轻量实现: [[akka.actor.LightArrayRevolverScheduler]]
   val scheduler: Scheduler = createScheduler()
 
+  // The ActorRefProvider is the only entity which creates all actor references within this actor system.
   val provider: ActorRefProvider = try {
     val arguments = Vector(
       classOf[String] → name,
@@ -753,6 +776,7 @@ private[akka] class ActorSystemImpl(
       throw e
   }
 
+  // deadLetters 是一个 actor, 用于接收处理失败, 或 actor 消亡后没有处理的消息
   def deadLetters: ActorRef = provider.deadLetters
 
   val mailboxes: Mailboxes = new Mailboxes(settings, eventStream, dynamicAccess, deadLetters)
@@ -765,6 +789,7 @@ private[akka] class ActorSystemImpl(
 
   val dispatcher: ExecutionContextExecutor = dispatchers.defaultGlobalDispatcher
 
+  // 在 AskSupport 中使用了
   val internalCallingThreadExecutionContext: ExecutionContext =
     dynamicAccess.getObjectFor[ExecutionContext]("scala.concurrent.Future$InternalCallbackExecutor$").getOrElse(
       new ExecutionContext with BatchingExecutor {
@@ -773,6 +798,7 @@ private[akka] class ActorSystemImpl(
         override def reportFailure(t: Throwable): Unit = dispatcher reportFailure t
       })
 
+  //
   private[this] final val terminationCallbacks = new TerminationCallbacks(provider.terminationFuture)(dispatcher)
 
   override def whenTerminated: Future[Terminated] = terminationCallbacks.terminationFuture
@@ -784,13 +810,17 @@ private[akka] class ActorSystemImpl(
   def /(path: Iterable[String]): ActorPath = guardian.path / path
 
   private lazy val _start: this.type = try {
+    // 注册回调代码, 当 ActorSystem.shutdown 后执行
+    // 即 actor system 关掉后, 要去停掉 scheduler
     registerOnTermination(stopScheduler())
     // the provider is expected to start default loggers, LocalActorRefProvider does this
     provider.init(this)
     if (settings.LogDeadLetters > 0)
       logDeadLetterListener = Some(systemActorOf(Props[DeadLetterListener], "deadLetterListener"))
     eventStream.startUnsubscriber()
+    // 加载扩展
     loadExtensions()
+    // 如果配置了启动时打印配置, 则打印
     if (LogConfigOnStart) logConfiguration()
     this
   } catch {
@@ -799,6 +829,7 @@ private[akka] class ActorSystemImpl(
       throw e
   }
 
+  // 创建 actor system 后会调用 start 方法
   def start(): this.type = _start
   def registerOnTermination[T](code: ⇒ T) { registerOnTermination(new Runnable { def run = code }) }
   def registerOnTermination(code: Runnable) { terminationCallbacks.add(code) }
@@ -868,6 +899,7 @@ private[akka] class ActorSystemImpl(
       other.asInstanceOf[T] //could be a T or null, in which case we return the null as T
   }
 
+  // 注册 extension
   @tailrec
   final def registerExtension[T <: Extension](ext: ExtensionId[T]): T = {
     findExtension(ext) match {
@@ -901,6 +933,7 @@ private[akka] class ActorSystemImpl(
 
   def hasExtension(ext: ExtensionId[_ <: Extension]): Boolean = findExtension(ext) != null
 
+  // 加载扩展
   private def loadExtensions() {
     /**
      * @param throwOnLoadFail Throw exception when an extension fails to load (needed for backwards compatibility)
@@ -908,7 +941,7 @@ private[akka] class ActorSystemImpl(
     def loadExtensions(key: String, throwOnLoadFail: Boolean): Unit = {
       immutableSeq(settings.config.getStringList(key)) foreach { fqcn ⇒
         dynamicAccess.getObjectFor[AnyRef](fqcn) recoverWith { case _ ⇒ dynamicAccess.createInstanceFor[AnyRef](fqcn, Nil) } match {
-          case Success(p: ExtensionIdProvider) ⇒ registerExtension(p.lookup())
+          case Success(p: ExtensionIdProvider) ⇒ registerExtension(p.lookup()) // 注册扩展
           case Success(p: ExtensionId[_])      ⇒ registerExtension(p)
           case Success(other) ⇒
             if (!throwOnLoadFail) log.error("[{}] is not an 'ExtensionIdProvider' or 'ExtensionId', skipping...", fqcn)
@@ -965,6 +998,7 @@ private[akka] class ActorSystemImpl(
     printNode(lookupRoot, "")
   }
 
+  // 当 actor system 被销毁时, 用它注册回调函数, 通过 add 方法
   final class TerminationCallbacks[T](upStreamTerminated: Future[T])(implicit ec: ExecutionContext) {
     private[this] final val done = Promise[T]()
     private[this] final val ref = new AtomicReference(done)

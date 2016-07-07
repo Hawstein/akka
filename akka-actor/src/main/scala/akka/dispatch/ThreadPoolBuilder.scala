@@ -194,6 +194,7 @@ final case class MonitorableThreadFactory(
   // 每 new 一个线程, name 后面的数字会加 1.
   // 所以如果这个数字非常大, 说明 new 了非常多的线程, 但并不能说明此时系统里的总线程数量非常多,
   // 因为 new 出来的线程会被回收
+  // 对于 ForkJoinPool 来说, 线程空闲 2s 后就会被回收
   def newThread(runnable: Runnable): Thread = wire(new Thread(runnable, name + "-" + counter.incrementAndGet()))
 
   def withName(newName: String): MonitorableThreadFactory = copy(newName)
