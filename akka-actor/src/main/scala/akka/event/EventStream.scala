@@ -19,6 +19,10 @@ import scala.annotation.tailrec
  *
  * The debug flag in the constructor toggles if operations on this EventStream should also be published
  * as Debug-Events
+ *
+ * Akka EvenStream 是系统及用户产生的事件的 pub-sub 流, 其中,
+ * 订阅者是 ActorRef, channel 是类, Event 是 java.lang.Object
+ * 如果某个 actor 订阅了一个类, 那么该 actor 会收到这个类及其子类的所有消息
  */
 class EventStream(sys: ActorSystem, private val debug: Boolean) extends LoggingBus with SubchannelClassification {
 
@@ -27,7 +31,12 @@ class EventStream(sys: ActorSystem, private val debug: Boolean) extends LoggingB
   type Event = AnyRef
   type Classifier = Class[_]
 
-  /** Either the list of subscribed actors, or a ref to an [[akka.event.EventStreamUnsubscriber]] */
+  /**
+   * Either the list of subscribed actors, or a ref to an [[akka.event.EventStreamUnsubscriber]]
+   *
+   * 要么是一组订阅消息的 actor, 要么是 [[akka.event.EventStreamUnsubscriber]]
+   */
+
   private val initiallySubscribedOrUnsubscriber = new AtomicReference[Either[Set[ActorRef], ActorRef]](Left(Set.empty))
 
   protected implicit val subclassification = new Subclassification[Class[_]] {
@@ -37,6 +46,7 @@ class EventStream(sys: ActorSystem, private val debug: Boolean) extends LoggingB
 
   protected def classify(event: AnyRef): Class[_] = event.getClass
 
+  // 向 subscriber 发布一个事件
   protected def publish(event: AnyRef, subscriber: ActorRef) = {
     if (sys == null && subscriber.isTerminated) unsubscribe(subscriber)
     else subscriber ! event
@@ -67,6 +77,9 @@ class EventStream(sys: ActorSystem, private val debug: Boolean) extends LoggingB
   /**
    * ''Must'' be called after actor system is "ready".
    * Starts system actor that takes care of unsubscribing subscribers that have terminated.
+   *
+   * actor system 准备好后, 必须调用该方法.
+   * 启动系统 actor, 用来监视所有在 eventStream 上订阅了消息的 actor, 当 actor 终止时, 从 eventStream 里为 actor 取消订阅
    */
   def startUnsubscriber(): Unit =
     // sys may be null for backwards compatibility reasons

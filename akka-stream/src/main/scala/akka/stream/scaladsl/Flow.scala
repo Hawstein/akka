@@ -140,6 +140,8 @@ final class Flow[-In, +Out, +Mat](
    *
    * It is recommended to use the internally optimized `Keep.left` and `Keep.right` combiners
    * where appropriate instead of manually writing functions that pass through one of the values.
+   *
+   * 把两个 Flow 连接起来, [this flow] 的 Out/In 连接到 [other flow] 的 In/Out 口
    */
   def joinMat[Mat2, Mat3](flow: Graph[FlowShape[Out, In], Mat2])(combine: (Mat, Mat2) ⇒ Mat3): RunnableGraph[Mat3] = {
     val resultBuilder = traversalBuilder

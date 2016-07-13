@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * needlessly watch the actor which will not cause trouble for the stream. This is a trade-off between slowing down
  * subscribe calls * because of the need of linearizing the history message sequence and the possibility of sometimes
  * watching a few actors too much - we opt for the 2nd choice here.
+ *
+ * 监视所有在 eventStream 上订阅了消息的 actor, 当 actor 终止时, 从 eventStream 里为 actor 取消订阅
  */
 protected[akka] class EventStreamUnsubscriber(eventStream: EventStream, debug: Boolean = false) extends Actor {
 

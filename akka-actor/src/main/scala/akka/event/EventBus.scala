@@ -119,6 +119,8 @@ trait LookupClassification { this: EventBus ⇒
 /**
  * Classification which respects relationships between channels: subscribing
  * to one channel automatically and idempotently subscribes to all sub-channels.
+ *
+ * 该 trait 表示, 订阅了某个 channel 则自动订阅其所有的子 channel
  */
 trait SubchannelClassification { this: EventBus ⇒
 

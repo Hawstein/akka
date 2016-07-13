@@ -91,6 +91,8 @@ trait ExtensionId[T <: Extension] {
   /**
    * Is used by Akka to instantiate the Extension identified by this ExtensionId,
    * internal use only.
+   *
+   * 继承了该 trait 的类覆写该函数
    */
   def createExtension(system: ExtendedActorSystem): T
 
