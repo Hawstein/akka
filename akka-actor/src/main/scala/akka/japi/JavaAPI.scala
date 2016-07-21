@@ -235,6 +235,7 @@ object Util {
 
   /**
    * Turns an [[java.lang.Iterable]] into an immutable Scala sequence (by copying it).
+   * 把 [[java.lang.Iterable]] 转为不可变的 Scala sequence
    */
   def immutableSeq[T](iterable: java.lang.Iterable[T]): immutable.Seq[T] =
     iterable match {
