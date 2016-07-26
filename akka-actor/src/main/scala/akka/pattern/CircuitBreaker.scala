@@ -26,6 +26,8 @@ import scala.compat.java8.FutureConverters
 
 /**
  * Companion object providing factory methods for Circuit Breaker which runs callbacks in caller's thread
+ *
+ * 该伴生对象提供的工厂方法创建的断路器, 会在调用的线程中执行回调函数. 如果想使用另外的线程, 可以自己 new 对象.
  */
 object CircuitBreaker {
 
@@ -40,6 +42,8 @@ object CircuitBreaker {
    * @param maxFailures Maximum number of failures before opening the circuit
    * @param callTimeout [[scala.concurrent.duration.FiniteDuration]] of time after which to consider a call a failure
    * @param resetTimeout [[scala.concurrent.duration.FiniteDuration]] of time after which to attempt to close the circuit
+   *
+   * 创建一个断路器, 回调函数会在调用者的同一线程执行.
    */
   def apply(scheduler: Scheduler, maxFailures: Int, callTimeout: FiniteDuration, resetTimeout: FiniteDuration): CircuitBreaker =
     new CircuitBreaker(scheduler, maxFailures, callTimeout, resetTimeout)(sameThreadExecutionContext)
@@ -133,6 +137,8 @@ class CircuitBreaker(
 
   /**
    * Holds reference to current state of CircuitBreaker - *access only via helper methods*
+   *
+   * 该值用来保存当前状态, 需要设置为 var, 因为该值会由 [[swapState]] 进行修改
    */
   @volatile
   private[this] var _currentStateDoNotCallMeDirectly: State = Closed
@@ -149,6 +155,8 @@ class CircuitBreaker(
    * @param oldState Previous state on transition
    * @param newState Next state on transition
    * @return Whether the previous state matched correctly
+   *
+   * 通过 Unsafe 来修改当前状态, 线程安全
    */
   @inline
   private[this] def swapState(oldState: State, newState: State): Boolean =
@@ -158,6 +166,8 @@ class CircuitBreaker(
    * Helper method for accessing underlying state via Unsafe
    *
    * @return Reference to current state
+   *
+   * 通过 Unsafe 来拿到当前的状态
    */
   @inline
   private[this] def currentState: State =
@@ -195,6 +205,8 @@ class CircuitBreaker(
    * @return [[scala.concurrent.Future]] containing the call result or a
    *   `scala.concurrent.TimeoutException` if the call timed out
    *
+   * 把需要保护的调用用断路器包起来, 使用当前状态的 invoke 方法.
+   * 返回值可能是正确的值, 也可能是一个 TimeoutException
    */
   def withCircuitBreaker[T](body: ⇒ Future[T]): Future[T] = currentState.invoke(body, CircuitBreaker.exceptionAsFailure)
 
@@ -204,6 +216,8 @@ class CircuitBreaker(
    * @param body Call needing protected
    * @return [[scala.concurrent.Future]] containing the call result or a
    *   `scala.concurrent.TimeoutException` if the call timed out
+   *
+   * Java 接口
    */
   def callWithCircuitBreaker[T](body: Callable[Future[T]]): Future[T] =
     callWithCircuitBreaker(body, CircuitBreaker.exceptionAsFailureJava[T])
@@ -228,6 +242,9 @@ class CircuitBreaker(
    * @param body Call needing protected
    * @return [[java.util.concurrent.CompletionStage]] containing the call result or a
    *   `scala.concurrent.TimeoutException` if the call timed out
+   *
+   * Java 8 接口, 使用 [[java.util.concurrent.CompletionStage]]
+   * 通过 [[FutureConverters]] 对 Future 和 CompletionStage 进行转换
    */
   def callWithCircuitBreakerCS[T](body: Callable[CompletionStage[T]]): CompletionStage[T] =
     callWithCircuitBreakerCS(body, CircuitBreaker.exceptionAsFailureJava)
@@ -258,6 +275,8 @@ class CircuitBreaker(
    *
    * @param body Call needing protected
    * @return The result of the call
+   *
+   * 把需要保护的同步调用用断路器包起来
    */
   def withSyncCircuitBreaker[T](body: ⇒ T): T =
     withSyncCircuitBreaker(body, CircuitBreaker.exceptionAsFailure)
@@ -358,6 +377,9 @@ class CircuitBreaker(
    *
    * @param callback Handler to be invoked on state change
    * @return CircuitBreaker for fluent usage
+   *
+   * 添加一个回调函数, 当断路器打开时, 执行该回调函数.
+   * 把回调函数包在 Runnable 里, 执行时提交到 ExecutionContext 中的线程池执行
    */
   def onOpen(callback: ⇒ Unit): CircuitBreaker = addOnOpenListener(new Runnable { def run = callback })
 
@@ -366,6 +388,8 @@ class CircuitBreaker(
    *
    * @param callback Handler to be invoked on state change
    * @return CircuitBreaker for fluent usage
+   *
+   * 为打开状态添加回调函数
    */
   @deprecated("Use addOnOpenListener instead", "2.5.0")
   def onOpen(callback: Runnable): CircuitBreaker = addOnOpenListener(callback)
@@ -387,6 +411,9 @@ class CircuitBreaker(
    *
    * @param callback Handler to be invoked on state change
    * @return CircuitBreaker for fluent usage
+   *
+   * 添加一个回调函数, 当断路器进入半开状态时, 执行该回调函数.
+   * 把回调函数包在 Runnable 里, 执行时提交到 ExecutionContext 中的线程池执行
    */
   def onHalfOpen(callback: ⇒ Unit): CircuitBreaker = addOnHalfOpenListener(new Runnable { def run = callback })
 
@@ -404,6 +431,8 @@ class CircuitBreaker(
    *
    * @param callback Handler to be invoked on state change
    * @return CircuitBreaker for fluent usage
+   *
+   * 为半开状态添加回调函数
    */
   def addOnHalfOpenListener(callback: Runnable): CircuitBreaker = {
     HalfOpen addListener callback
@@ -417,6 +446,9 @@ class CircuitBreaker(
    *
    * @param callback Handler to be invoked on state change
    * @return CircuitBreaker for fluent usage
+   *
+   * 添加一个回调函数, 当断路器进入关闭状态时, 执行该回调函数.
+   * 把回调函数包在 Runnable 里, 执行时提交到 ExecutionContext 中的线程池执行
    */
   def onClose(callback: ⇒ Unit): CircuitBreaker = addOnCloseListener(new Runnable { def run = callback })
 
@@ -425,6 +457,8 @@ class CircuitBreaker(
    *
    * @param callback Handler to be invoked on state change
    * @return CircuitBreaker for fluent usage
+   *
+   * 为关闭状态添加回调函数
    */
   @deprecated("Use addOnCloseListener instead", "2.5.0")
   def onClose(callback: Runnable): CircuitBreaker = addOnCloseListener(callback)
@@ -534,6 +568,8 @@ class CircuitBreaker(
    * Retrieves current failure count.
    *
    * @return count
+   *
+   * 当前失败了多少次, 由 Closed 记录
    */
   private[akka] def currentFailureCount: Int = Closed.get
 
@@ -542,6 +578,8 @@ class CircuitBreaker(
    *
    * @param fromState State being transitioning from
    * @param toState State being transitioning from
+   *
+   * 从 fromState 状态过渡到 toState 状态
    */
   private def transition(fromState: State, toState: State): Unit = {
     if (swapState(fromState, toState))
@@ -553,12 +591,15 @@ class CircuitBreaker(
    * Trips breaker to an open state.  This is valid from Closed or Half-Open states.
    *
    * @param fromState State we're coming from (Closed or Half-Open)
+   *
+   * 从 [[Closed]] 或 [[HalfOpen]] 状态过渡到 [[Open]] 状态
    */
   private def tripBreaker(fromState: State): Unit = transition(fromState, Open)
 
   /**
    * Resets breaker to a closed state.  This is valid from an Half-Open state only.
    *
+   * 重置断路器, 即从 [[HalfOpen]] 状态转换为 [[Closed]]
    */
   private def resetBreaker(): Unit = transition(HalfOpen, Closed)
 
@@ -624,6 +665,7 @@ class CircuitBreaker(
   /**
    * Attempts to reset breaker by transitioning to a half-open state.  This is valid from an Open state only.
    *
+   * 通过进入关开状态, 尝试重置断路器.
    */
   private def attemptReset(): Unit = transition(Open, HalfOpen)
 
@@ -639,14 +681,21 @@ class CircuitBreaker(
 
   /**
    * Internal state abstraction
+   *
+   * 断路器的内部状态, 共 3 种:
+   * [[Closed]]: 初始状态, 断路器是关的, 正常做异步调用
+   * [[Open]]: 当抛出异常个数和超时次数加起来超过设定的阈值, 断路器进入打开状态. 所有的调用都会抛出 [[CircuitBreakerOpenException]] 异常. [[resetTimeout]] 到了之后, 进入半开状态
+   * [[HalfOpen]]: 半开状态时, 第一个调用会进行尝试, 其它的则抛出异常快速失败. 如果第一次调用成功, 进入关闭状态; 否则再次进入打开状态, 并等待 resetTimeout 的时间
    */
   private sealed trait State {
-    private val listeners = new CopyOnWriteArrayList[Runnable]
+    private val listeners = new CopyOnWriteArrayList[Runnable] // 线程安全的 ArrayList
 
     /**
      * Add a listener function which is invoked on state entry
      *
      * @param listener listener implementation
+     *
+     * 添加一个 listener
      */
     def addListener(listener: Runnable): Unit = listeners add listener
 
@@ -709,7 +758,7 @@ class CircuitBreaker(
             callFails()
           } else {
             notifyCallSuccessListeners(start)
-            callSucceeds()
+            callSucceeds() // 调用成功时执行的函数, Closed/Open/HalfOpen 都有相应的实现
           }
         }
 
@@ -762,12 +811,14 @@ class CircuitBreaker(
     /**
      * Invoked when call succeeds
      *
+     * 调用成功时, 执行该函数. 每个状态会有自己的实现
      */
     def callSucceeds(): Unit
 
     /**
      * Invoked when call fails
      *
+     * 调用失败时, 执行该函数. 每个状态会有自己的实现
      */
     def callFails(): Unit
 
@@ -775,6 +826,7 @@ class CircuitBreaker(
      * Invoked on the transitioned-to state during transition.  Notifies listeners after invoking subclass template
      * method _enter
      *
+     * 进入具体的一个状态时调用 _enter() 进行设置, 然后调用已注册的监听函数
      */
     final def enter(): Unit = {
       _enter()
@@ -790,6 +842,7 @@ class CircuitBreaker(
 
   /**
    * Concrete implementation of Closed state
+   * 断路器的关闭状态, 也是默认状态. 继承 [[AtomicInteger]], 将自身视为一个失败事件计数器. 每次调用失败会加 1, 直到设定的失败阈值.
    */
   private object Closed extends AtomicInteger with State {
 
@@ -798,6 +851,8 @@ class CircuitBreaker(
      *
      * @param body Implementation of the call that needs protected
      * @return Future containing result of protected call
+     *
+     * 处于关闭状态时, 直接进行异步调用.
      */
     override def invoke[T](body: ⇒ Future[T], defineFailureFn: Try[T] ⇒ Boolean): Future[T] =
       callThrough(body, defineFailureFn)
@@ -806,6 +861,8 @@ class CircuitBreaker(
      * On successful call, the failure count is reset to 0
      *
      * @return
+     *
+     * 只要调用成功, 则将计数器置 0
      */
     override def callSucceeds(): Unit = set(0)
 
@@ -814,6 +871,8 @@ class CircuitBreaker(
      * the breaker is tripped if we have reached maxFailures.
      *
      * @return
+     *
+     * 调用失败, 计数器增 1, 并且与设定的最大失败次数进行对比, 达到了则阈值则进入 [[Open]] 状态.
      */
     override def callFails(): Unit = if (incrementAndGet() == maxFailures) tripBreaker(Closed)
 
@@ -821,6 +880,8 @@ class CircuitBreaker(
      * On entry of this state, failure count and resetTimeout is reset.
      *
      * @return
+     *
+     * 进入该状态时, 计数器清 0
      */
     override def _enter(): Unit = {
       set(0)
@@ -837,6 +898,10 @@ class CircuitBreaker(
 
   /**
    * Concrete implementation of half-open state
+   *
+   * 断路器的半开状态, [[Open]] 状态在达到 [[resetTimeout]] 后会进入该状态.
+   * 半开状态时, 第一个调用会进行尝试, 其它的则抛出异常快速失败. 如果第一调用成功, 进入关闭状态; 否则再次进入打开状态, 并等待 resetTimeout 的时间.
+   * 继承 [[AtomicBoolean]] 并设置初始值为 true, 第一调用后设置为 false, 以此达到只调用一次的效果.
    */
   private object HalfOpen extends AtomicBoolean(true) with State {
 
@@ -846,6 +911,9 @@ class CircuitBreaker(
      *
      * @param body Implementation of the call that needs protected
      * @return Future containing result of protected call
+     *
+     * 第一次调用会进行尝试, 其它的则抛出异常快速失败.
+     * 如果第一次调用成功, 进入关闭状态; 否则再次进入打开状态, 并等待 resetTimeout 的时间.
      */
     override def invoke[T](body: ⇒ Future[T], defineFailureFn: Try[T] ⇒ Boolean): Future[T] =
       if (compareAndSet(true, false))
@@ -859,6 +927,8 @@ class CircuitBreaker(
      * Reset breaker on successful call.
      *
      * @return
+     *
+     * 如果第一次调用成功, 进入关闭状态
      */
     override def callSucceeds(): Unit = resetBreaker()
 
@@ -866,6 +936,8 @@ class CircuitBreaker(
      * Reopen breaker on failed call.
      *
      * @return
+     *
+     * 如果第一次调用失败, 进入打开状态
      */
     override def callFails(): Unit = tripBreaker(HalfOpen)
 
@@ -873,6 +945,8 @@ class CircuitBreaker(
      * On entry, guard should be reset for that first call to get in
      *
      * @return
+     *
+     * 进入该状态时, 设置初始布尔值为 true
      */
     override def _enter(): Unit = set(true)
 
@@ -886,6 +960,8 @@ class CircuitBreaker(
 
   /**
    * Concrete implementation of Open state
+   *
+   * Open 继承了 [[AtomicLong]], 将自身视为时间戳, 进入该状态时, 会将当前时间戳设置到自身, 表示设置这个状态的起始时间
    */
   private object Open extends AtomicLong with State {
 
@@ -894,6 +970,8 @@ class CircuitBreaker(
      *
      * @param body Implementation of the call that needs protected
      * @return Future containing result of protected call
+     *
+     * 断路器处于打开状态时, 所有的调用都会快速失败
      */
     override def invoke[T](body: ⇒ Future[T], defineFailureFn: Try[T] ⇒ Boolean): Future[T] = {
       notifyCallBreakerOpenListeners()
@@ -904,18 +982,22 @@ class CircuitBreaker(
      * Calculate remaining duration until reset to inform the caller in case a backoff algorithm is useful
      *
      * @return duration to when the breaker will attempt a reset by transitioning to half-open
+     *
+     * 返回离到达 [[resetTimeout]] 还剩余的时间
      */
     private def remainingDuration(): FiniteDuration = {
-      val fromOpened = System.nanoTime() - get
-      val diff = currentResetTimeout.toNanos - fromOpened
-      if (diff <= 0L) Duration.Zero
-      else diff.nanos
+      val fromOpened = System.nanoTime() - get // Open 状态已经持续的时间
+      val diff = currentResetTimeout.toNanos - fromOpened // 离到达 resetTimeout 还有多少时间
+      if (diff <= 0L) Duration.Zero // 如果小于 0, 则到达 resetTimeout
+      else diff.nanos // 否则返回剩余时间
     }
 
     /**
      * No-op for open, calls are never executed so cannot succeed or fail
      *
      * @return
+     *
+     * 处于 Open 状态时, 不会执行调用, 因此无需相应的处于函数
      */
     override def callSucceeds(): Unit = ()
 
@@ -923,6 +1005,8 @@ class CircuitBreaker(
      * No-op for open, calls are never executed so cannot succeed or fail
      *
      * @return
+     *
+     * 同 [[callSucceeds]]
      */
     override def callFails(): Unit = ()
 
@@ -931,6 +1015,8 @@ class CircuitBreaker(
      * calculate remaining time before attempted reset.
      *
      * @return
+     *
+     * 用当前时间戳设置进入该状态时的时间, 并起一个定时任务, 在 [[resetTimeout]] 后尝试重置断路器, 即把状态改为半开状态
      */
     override def _enter(): Unit = {
       set(System.nanoTime())
@@ -962,6 +1048,9 @@ class CircuitBreaker(
  * @param remainingDuration Stores remaining time before attempting a reset.  Zero duration means the breaker is
  *                          currently in half-open state.
  * @param message Defaults to "Circuit Breaker is open; calls are failing fast"
+ *
+ * 当断路器处于打开状态时, 所有的调用都会抛出以下异常
+ * 当断路器处于半开状态时, 除了第一个调用, 其它调用都会抛出以下异常
  */
 class CircuitBreakerOpenException(
   val remainingDuration: FiniteDuration,
