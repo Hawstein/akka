@@ -48,6 +48,8 @@ import scala.concurrent.{ Future, Promise }
 
   /**
    * INTERNAL API
+   *
+   * 简单线性 GraphStage, 如果 flow 不会改变流入元素的类型, 可以继承该类
    */
   @InternalApi private[akka] abstract class SimpleLinearGraphStage[T] extends GraphStage[FlowShape[T, T]] {
     val in = Inlet[T](Logging.simpleName(this) + ".in")
@@ -55,6 +57,9 @@ import scala.concurrent.{ Future, Promise }
     override val shape = FlowShape(in, out)
   }
 
+  /**
+   * 该 flow 将流入元素原样流出
+   */
   private object Identity extends SimpleLinearGraphStage[Any] {
     override def initialAttributes = DefaultAttributes.identityOp
 

@@ -29,6 +29,8 @@ import akka.stream.impl.Stages.DefaultAttributes
 
 /**
  * INTERNAL API
+ *
+ * 通过方法 f 将流入的类型为 In 的元素, 映射成类型为 Out 的输出元素
  */
 @InternalApi private[akka] final case class Map[In, Out](f: In ⇒ Out) extends GraphStage[FlowShape[In, Out]] {
   val in = Inlet[In]("Map.in")
@@ -61,6 +63,8 @@ import akka.stream.impl.Stages.DefaultAttributes
 
 /**
  * INTERNAL API
+ *
+ * 过滤出使 p 为 true 的元素
  */
 @InternalApi private[akka] final case class Filter[T](p: T ⇒ Boolean) extends SimpleLinearGraphStage[T] {
   override def initialAttributes: Attributes = DefaultAttributes.filter
@@ -95,6 +99,8 @@ import akka.stream.impl.Stages.DefaultAttributes
 
 /**
  * INTERNAL API
+ *
+ * 一直取元素流出 out, 直到 p 为 false; inclusive 决定最后一个元素是不是要流出 out
  */
 @InternalApi private[akka] final case class TakeWhile[T](p: T ⇒ Boolean, inclusive: Boolean = false) extends SimpleLinearGraphStage[T] {
   override def initialAttributes: Attributes = DefaultAttributes.takeWhile
@@ -132,6 +138,8 @@ import akka.stream.impl.Stages.DefaultAttributes
 
 /**
  * INTERNAL API
+ *
+ * 当 p 为 true 时, 一直丢掉元素. 直接到 p 为 false, 通过改变 inhandler 将该 flow 变为 Identity flow
  */
 @InternalApi private[akka] final case class DropWhile[T](p: T ⇒ Boolean) extends SimpleLinearGraphStage[T] {
   override def initialAttributes: Attributes = DefaultAttributes.dropWhile
@@ -164,6 +172,8 @@ import akka.stream.impl.Stages.DefaultAttributes
 
 /**
  * INTERNAL API
+ *
+ * 带有监督功能的 GraphStageLogic
  */
 @DoNotInherit private[akka] abstract class SupervisedGraphStageLogic(inheritedAttributes: Attributes, shape: Shape) extends GraphStageLogic(shape) {
   private lazy val decider = inheritedAttributes.get[SupervisionStrategy].map(_.decider).getOrElse(Supervision.stoppingDecider)
@@ -197,6 +207,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * collect 满足条件的元素, 做出变换后流出 out
  */
 @InternalApi private[akka] final case class Collect[In, Out](pf: PartialFunction[In, Out]) extends GraphStage[FlowShape[In, Out]] {
   val in = Inlet[In]("Collect.in")
@@ -231,6 +243,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 当 upstreams 发生异常时, 将最后的元素存储起来, 下次来 pull 可以流向下游
  */
 @InternalApi private[akka] final case class Recover[T](pf: PartialFunction[Throwable, T]) extends SimpleLinearGraphStage[T] {
   override protected def initialAttributes: Attributes = DefaultAttributes.recover
@@ -349,6 +363,10 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 将元素一个一个应用到 f, 每应用一次 f 就向 out 输出一次.
+ * zero 会在第一次输出.
+ * 注意与 [[Fold]] 的区别.
  */
 @InternalApi private[akka] final case class Scan[In, Out](zero: Out, f: (Out, In) ⇒ Out) extends GraphStage[FlowShape[In, Out]] {
   override val shape = FlowShape[In, Out](Inlet("Scan.in"), Outlet("Scan.out"))
@@ -515,6 +533,9 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 将元素累积应用到 f, 直到上游结束才将结果向 out 输出.
+ * 注意与 [[Scan]] 的区别.
  */
 @InternalApi private[akka] final case class Fold[In, Out](zero: Out, f: (Out, In) ⇒ Out) extends GraphStage[FlowShape[In, Out]] {
 
@@ -704,6 +725,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 将元素按每 n 个一组输出
  */
 @InternalApi private[akka] final case class Grouped[T](n: Int) extends GraphStage[FlowShape[T, immutable.Seq[T]]] {
   require(n > 0, "n must be greater than 0")
@@ -758,6 +781,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 带权重的限制元素「个数」, 权重超出时抛出 StreamLimitReachedException 异常
  */
 @InternalApi private[akka] final case class LimitWeighted[T](val n: Long, val costFn: T ⇒ Long) extends SimpleLinearGraphStage[T] {
   override def initialAttributes: Attributes = DefaultAttributes.limitWeighted

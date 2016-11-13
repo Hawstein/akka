@@ -491,6 +491,9 @@ abstract class GraphStageLogic private[stream] (val inCount: Int, val outCount: 
    * Emits an element through the given output port. Calling this method twice before a [[pull()]] has been arrived
    * will fail. There can be only one outstanding push request at any given time. The method [[isAvailable()]] can be
    * used to check if the port is ready to be pushed or not.
+   *
+   * 向出口射出一个元素. 对于每个 pull 请求, 只能用一个 push 去回应, 超过1个则会失败. 任何时刻只能有一个 push 请求.
+   * 可以使用 [[isAvailable()]] 来检查出口 out 是否可以 push 了
    */
   final protected def push[T](out: Outlet[T], elem: T): Unit = {
     val connection = conn(out)
