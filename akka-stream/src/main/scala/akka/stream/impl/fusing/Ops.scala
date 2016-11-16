@@ -817,6 +817,9 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 滑动窗口, 窗口大小为 n, 即每次发 n 个元素, 最后一个组可能不到 n 个.
+ * 步长为 step, 即跳过 step 个元素, 再发 n 个. 当 step < n 时, 窗口有重叠部分.
  */
 @InternalApi private[akka] final case class Sliding[T](val n: Int, val step: Int) extends GraphStage[FlowShape[T, immutable.Seq[T]]] {
   require(n > 0, "n must be greater than 0")
@@ -948,6 +951,9 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 对于慢消费者, 累积并批量发送数据.
+ * 如果下游一直没请求, 而上游有新元素到来, 并且 Batch 已经达到最大容量(使用代价函数算), pending 的元素会被丢掉, 将新来的的元素放到 pending
  */
 @InternalApi private[akka] final case class Batch[In, Out](val max: Long, val costFn: In ⇒ Long, val seed: In ⇒ Out, val aggregate: (Out, In) ⇒ Out)
   extends GraphStage[FlowShape[In, Out]] {
@@ -1070,6 +1076,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 该 stage 将最后一个元素扩展成一个 Iterator, 对于下游的消费速度大于上游的生产速度时, 可以消费 Iterator 中的元素.
  */
 @InternalApi private[akka] final class Expand[In, Out](val extrapolate: In ⇒ Iterator[Out]) extends GraphStage[FlowShape[In, Out]] {
   private val in = Inlet[In]("expand.in")
@@ -1145,6 +1153,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * [[Map]] 的异步版本
  */
 @InternalApi private[akka] final case class MapAsync[In, Out](parallelism: Int, f: In ⇒ Future[Out])
   extends GraphStage[FlowShape[In, Out]] {
@@ -1223,6 +1233,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * [[Map]] 的异步版本, 并且不需要保持元素顺序
  */
 @InternalApi private[akka] final case class MapAsyncUnordered[In, Out](parallelism: Int, f: In ⇒ Future[Out])
   extends GraphStage[FlowShape[In, Out]] {
@@ -1681,6 +1693,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * 在 timeout 时间内一直取元素, 时间到则结束 stage.
  */
 @InternalApi private[akka] final class TakeWithin[T](val timeout: FiniteDuration) extends SimpleLinearGraphStage[T] {
 
@@ -1701,6 +1715,8 @@ private[stream] object Collect {
 
 /**
  * INTERNAL API
+ *
+ * timeout 时间内一直丢元素, 时间到开始正常 push 元素.
  */
 @InternalApi private[akka] final class DropWithin[T](val timeout: FiniteDuration) extends SimpleLinearGraphStage[T] {
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) with InHandler with OutHandler {
