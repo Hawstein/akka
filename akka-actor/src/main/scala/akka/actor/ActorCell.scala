@@ -494,6 +494,7 @@ private[akka] class ActorCell(
       val message = messages.head
       message.unlink()
       try {
+        // 要处理的系统消息, 统一在这里处理
         message match {
           case message: SystemMessage if shouldStash(message, currentState) ⇒ stash(message)
           case f: Failed ⇒ handleFailure(f)
