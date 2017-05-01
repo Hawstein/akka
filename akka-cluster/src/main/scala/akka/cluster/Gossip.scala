@@ -57,6 +57,8 @@ private[cluster] object Gossip {
  * move the node to the `Exiting` state and once a convergence is complete move the node to
  * `Removed` by removing it from the `members` set and sending a `Removed` command to the
  * removed node telling it to shut itself down.
+ *
+ *
  */
 @SerialVersionUID(1L)
 private[cluster] final case class Gossip(
@@ -83,16 +85,21 @@ private[cluster] final case class Gossip(
         format seenButNotMember.mkString(", "))
   }
 
+  // 地址 -> Member 的 map
   @transient private lazy val membersMap: Map[UniqueAddress, Member] =
     members.map(m ⇒ m.uniqueAddress → m)(collection.breakOut)
 
   /**
    * Increments the version for this 'Node'.
+   *
+   * 为节点 node 增加一个版本号
    */
   def :+(node: VectorClock.Node): Gossip = copy(version = version :+ node)
 
   /**
    * Adds a member to the member node ring.
+   *
+   * 增加一个成员节点
    */
   def :+(member: Member): Gossip = {
     if (members contains member) this
@@ -101,6 +108,8 @@ private[cluster] final case class Gossip(
 
   /**
    * Marks the gossip as seen by this node (address) by updating the address entry in the 'gossip.overview.seen'
+   *
+   * 向 gossip.overview.seen 中加入节点 node, 表示 gossip 被该节点 node 看到
    */
   def seen(node: UniqueAddress): Gossip = {
     if (seenByNode(node)) this
@@ -109,6 +118,8 @@ private[cluster] final case class Gossip(
 
   /**
    * Marks the gossip as seen by only this node (address) by replacing the 'gossip.overview.seen'
+   *
+   * 设置仅有节点 node 看过这条 gossip
    */
   def onlySeen(node: UniqueAddress): Gossip = {
     this copy (overview = overview copy (seen = Set(node)))
@@ -116,6 +127,8 @@ private[cluster] final case class Gossip(
 
   /**
    * Remove all seen entries
+   *
+   * 清空 seen 列表, 此状态表明没有任何节点看过这条 gossip
    */
   def clearSeen(): Gossip = {
     this copy (overview = overview copy (seen = Set.empty))
@@ -123,22 +136,30 @@ private[cluster] final case class Gossip(
 
   /**
    * The nodes that have seen the current version of the Gossip.
+   *
+   * 看过当前版本 gossip 的节点集合
    */
   def seenBy: Set[UniqueAddress] = overview.seen
 
   /**
    * Has this Gossip been seen by this node.
+   *
+   * 通过检查 seen 中是否包含节点 node 来判断该 node 是否已经看过这条 gossip
    */
   def seenByNode(node: UniqueAddress): Boolean = overview.seen(node)
 
   /**
    * Merges the seen table of two Gossip instances.
+   *
+   * 合并 seen 列表
    */
   def mergeSeen(that: Gossip): Gossip =
     this copy (overview = overview copy (seen = overview.seen union that.overview.seen))
 
   /**
    * Merges two Gossip instances including membership tables, and the VectorClock histories.
+   *
+   * 合并 Gossip 两个实例
    */
   def merge(that: Gossip): Gossip = {
 
@@ -154,6 +175,7 @@ private[cluster] final case class Gossip(
       that.overview.reachability)
 
     // 4. Nobody can have seen this new gossip yet
+    // 4. 这个新合并的 Gossip 还没有节点看过, seen 设置为空
     val mergedSeen = Set.empty[UniqueAddress]
 
     Gossip(mergedMembers, GossipOverview(mergedSeen, mergedReachability), mergedVClock)
@@ -173,6 +195,14 @@ private[cluster] final case class Gossip(
     // Else we can't continue to check for convergence
     // When that is done we check that all members with a convergence
     // status is in the seen table, i.e. has seen this version
+    //
+    // Gossip 收敛条件:
+    // 1. 除了自己 selfUniqueAddress 和已经确认过的 exitingConfirmed, 不存在 unreachable 的 member, 或
+    // 所有的 unreachable 的 member 都处于 Down, Exiting 状态
+    // 2. 不能存在这样的成员节点: 处于 Up, Leaving 状态, 且没看过这条 gossip, 且不在 exitingConfirmed 列表中,
+    // 即: 处于 Up, Leaving 状态的节点, 要么看过这条 gossip, 要么已经在 exitingConfirmed 列表中
+    // 第二条判断我觉得用下面这种方式更易理解:
+    // members.forall(m => if (Gossip.convergenceMemberStatus(m.status)) seenByNode(m.uniqueAddress) || exitingConfirmed(m.uniqueAddress) else true)
     val unreachable = reachabilityExcludingDownedObservers.allUnreachableOrTerminated.collect {
       case node if (node != selfUniqueAddress && !exitingConfirmed(node)) ⇒ member(node)
     }
@@ -181,6 +211,7 @@ private[cluster] final case class Gossip(
         !(seenByNode(m.uniqueAddress) || exitingConfirmed(m.uniqueAddress)))
   }
 
+  // reachability 中移除状态为 Down 的 member
   lazy val reachabilityExcludingDownedObservers: Reachability = {
     val downed = members.collect { case m if m.status == Down ⇒ m }
     overview.reachability.removeObservers(downed.map(_.uniqueAddress))
@@ -195,6 +226,11 @@ private[cluster] final case class Gossip(
   def roleLeader(role: String, selfUniqueAddress: UniqueAddress): Option[UniqueAddress] =
     leaderOf(members.filter(_.hasRole(role)), selfUniqueAddress)
 
+  /**
+   *
+   * 在 reachable member 中找到第一个节点即为 leader(状态需要为 Up 或 Leaving)
+   * 根据 [[Member.addressOrdering]], 为满足条件的 member 中 ip 地址最小的
+   */
   def leaderOf(mbrs: immutable.SortedSet[Member], selfUniqueAddress: UniqueAddress): Option[UniqueAddress] = {
     val reachableMembers =
       if (overview.reachability.isAllReachable) mbrs.filterNot(_.status == Down)
@@ -207,8 +243,10 @@ private[cluster] final case class Gossip(
 
   def allRoles: Set[String] = members.flatMap(_.roles)
 
+  // 只有一个 member 时, 即为 SingletonCluster
   def isSingletonCluster: Boolean = members.size == 1
 
+  // 根据地址拿到一个 member. 如果没有, 就用这个地址创建一个 Removed 状态的 member并返回
   def member(node: UniqueAddress): Member = {
     membersMap.getOrElse(
       node,
@@ -217,6 +255,7 @@ private[cluster] final case class Gossip(
 
   def hasMember(node: UniqueAddress): Boolean = membersMap.contains(node)
 
+  // 拿到最年轻的 member
   def youngestMember: Member = {
     require(members.nonEmpty, "No youngest when no members")
     members.maxBy(m ⇒ if (m.upNumber == Int.MaxValue) 0 else m.upNumber)

@@ -922,6 +922,8 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
 
   /**
    * Initiates a new round of gossip.
+   *
+   * 开始新的一轮 gossip
    */
   def gossip(): Unit = {
 

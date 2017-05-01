@@ -14,6 +14,8 @@ import scala.runtime.AbstractFunction2
  *
  * Note: `hashCode` and `equals` are solely based on the underlying `Address`, not its `MemberStatus`
  * and roles.
+ *
+ * 表示一个集群成员节点, 包含了地址, 当前状态以及该成员的角色
  */
 @SerialVersionUID(1L)
 class Member private[cluster] (
@@ -83,6 +85,8 @@ object Member {
 
   /**
    * INTERNAL API
+   *
+   * 产生一个 Removed 状态的成员
    */
   private[cluster] def removed(node: UniqueAddress): Member = new Member(node, Int.MaxValue, Removed, Set.empty)
 
@@ -178,6 +182,8 @@ object Member {
  * Defines the current status of a cluster member node
  *
  * Can be one of: Joining, WeaklyUp, Up, Leaving, Exiting and Down and Removed.
+ *
+ * 定义集群中成员的状态, 共有 7 种状态: Joining, WeaklyUp, Up, Leaving, Exiting and Down and Removed.
  */
 sealed abstract class MemberStatus
 
@@ -227,6 +233,8 @@ object MemberStatus {
 
   /**
    * INTERNAL API
+   *
+   * 定义一个状态可以转移的状态集合
    */
   private[cluster] val allowedTransitions: Map[MemberStatus, Set[MemberStatus]] =
     Map(
