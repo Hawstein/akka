@@ -12,6 +12,9 @@ import akka.persistence.SnapshotProtocol._
  */
 trait Snapshotter extends Actor {
 
+  /**
+   * 具体实现在 [[Eventsourced.snapshotStore]]
+   */
   /** Snapshot store plugin actor. */
   private[persistence] def snapshotStore: ActorRef
 
@@ -28,6 +31,10 @@ trait Snapshotter extends Actor {
   /**
    * Instructs the snapshot store to load the specified snapshot and send it via an [[SnapshotOffer]]
    * to the running [[PersistentActor]].
+   *
+   * 向 snapshotStore 发送 LoadSnapshot, 令其加载指定的 snapshot 并通过 [[SnapshotOffer]] 发给同一上下文中的 PersistentActor
+   * snapshotStore 实例在 [[Eventsourced.snapshotStore]]
+   * 具体的实现会继承 [[akka.persistence.snapshot.SnapshotStore]] trait
    */
   def loadSnapshot(persistenceId: String, criteria: SnapshotSelectionCriteria, toSequenceNr: Long) =
     snapshotStore ! LoadSnapshot(persistenceId, criteria, toSequenceNr)

@@ -17,6 +17,8 @@ import scala.util.control.NoStackTrace
 abstract class RecoveryCompleted
 /**
  * Sent to a [[PersistentActor]] when the journal replay has been finished.
+ *
+ * 当 journal 重播完成后, 会发送 RecoveryCompleted 给 PersistentActor
  */
 @SerialVersionUID(1L)
 case object RecoveryCompleted extends RecoveryCompleted {
@@ -28,11 +30,15 @@ case object RecoveryCompleted extends RecoveryCompleted {
 
 /**
  * Reply message to a successful [[Eventsourced#deleteMessages]] request.
+ *
+ * [[Eventsourced.deleteMessages]] 请求成功时, 会返回以下消息
  */
 final case class DeleteMessagesSuccess(toSequenceNr: Long)
 
 /**
  * Reply message to a failed [[Eventsourced#deleteMessages]] request.
+ *
+ * [[Eventsourced.deleteMessages]] 请求失败时, 发送以下消息
  */
 final case class DeleteMessagesFailure(cause: Throwable, toSequenceNr: Long)
 
@@ -53,6 +59,21 @@ final case class DeleteMessagesFailure(cause: Throwable, toSequenceNr: Long)
  *                     is latest (= youngest) snapshot.
  * @param toSequenceNr upper sequence number bound (inclusive) for recovery. Default is no upper bound.
  * @param replayMax maximum number of messages to replay. Default is no limit.
+ *
+ * 恢复模式配置对象, 由 [[PersistentActor.recovery]] 返回
+ *
+ * 默认从最新的 snapshot 开始重播事件, 直到最新的事件.
+ *
+ * 如果保存过 snapshot, 则从中挑出满足 fromSnapshot 标准的 snapshot(默认选最新的) 开始重播事件
+ * 否则, 则从头开始重播事件.
+ *
+ * 如果从一个 snapshot 开始恢复, 该 snapshot 通过 [[SnapshotOffer]] 消息提供给 persistent actor.
+ * 紧接着会发送一系列比该 snapshot 新的重播消息, 直到 toSequenceNr
+ *
+ * fromSnapshot: 选择作为恢复起点的 snapshot 的标准, 默认是最新(最年轻)
+ * toSequenceNr 恢复的上界(序列号), 默认没有限制
+ * replayMax 重播消息的最大数量, 默认没有限制
+
  */
 @SerialVersionUID(1L)
 final case class Recovery(
@@ -98,7 +119,10 @@ object Recovery {
 
   /**
    * Convenience method for skipping recovery in [[PersistentActor]].
+   *
    * @see [[Recovery]]
+   *
+   * 跳过恢复过程, 不恢复历史事件
    */
   val none: Recovery = Recovery(toSequenceNr = 0L)
 }
@@ -108,6 +132,8 @@ final class RecoveryTimedOut(message: String) extends RuntimeException(message) 
 /**
  * This defines how to handle the current received message which failed to stash, when the size of
  * Stash exceeding the capacity of Stash.
+ *
+ * PersistentActor 在恢复的过程中, 会将新来的消息 stash 起来, 如果超出了最大 stash 容量, 则会下列策略决定下一步如何做
  */
 sealed trait StashOverflowStrategy
 
@@ -159,6 +185,8 @@ final class DiscardConfigurator extends StashOverflowStrategyConfigurator {
 
 /**
  * Scala API: A persistent Actor - can be used to implement command or event sourcing.
+ *
+ * Persistent Actor 只提供了一组对外的接口, 真正的实现在 [[Eventsourced]] 中
  */
 trait PersistentActor extends Eventsourced with PersistenceIdentity {
   def receive = receiveCommand

@@ -28,6 +28,8 @@ import akka.actor.Terminated
  * INTERNAL API: When starting many persistent actors at the same time the journal
  * its data store is protected from being overloaded by limiting number
  * of recoveries that can be in progress at the same time.
+ *
+ * 该 Actor 用于限制同时做恢复的 actor 的数量
  */
 @InternalApi private[akka] class RecoveryPermitter(maxPermits: Int) extends Actor with ActorLogging {
   import RecoveryPermitter._

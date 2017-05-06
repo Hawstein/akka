@@ -14,6 +14,7 @@ import akka.pattern.CircuitBreaker
 
 /**
  * Abstract snapshot store.
+ *
  */
 trait SnapshotStore extends Actor with ActorLogging {
   import SnapshotProtocol._

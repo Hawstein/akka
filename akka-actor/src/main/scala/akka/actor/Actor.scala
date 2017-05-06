@@ -537,7 +537,7 @@ trait Actor {
    * @param receive current behavior.
    * @param msg current message.
    *
-   * 在 ActorCell.receiveMessage 中使用, mailbox 中进行消息处理时会用到
+   * 在 [[ActorCell.receiveMessage]] 中使用, mailbox 中进行消息处理时会用到
    */
   protected[akka] def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
     // optimization: avoid allocation of lambda

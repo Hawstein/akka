@@ -72,6 +72,8 @@ final class PersistenceSettings(config: Config) {
 
 /**
  * Identification of [[PersistentActor]] or [[PersistentView]].
+ *
+ * [[PersistentActor]] 的唯一标识, 包含 persistenceId, journalPluginId, snapshotPluginId
  */
 //#persistence-identity
 trait PersistenceIdentity {
@@ -86,6 +88,8 @@ trait PersistenceIdentity {
    * When empty, looks in `akka.persistence.journal.plugin` to find configuration entry path.
    * When configured, uses `journalPluginId` as absolute path to the journal configuration entry.
    * Configuration entry must contain few required fields, such as `class`. See `src/main/resources/reference.conf`.
+   *
+   * 如果为空, 会在 akka.persistence.journal.plugin 找配置
    */
   def journalPluginId: String = ""
 
@@ -94,6 +98,8 @@ trait PersistenceIdentity {
    * When empty, looks in `akka.persistence.snapshot-store.plugin` to find configuration entry path.
    * When configured, uses `snapshotPluginId` as absolute path to the snapshot store configuration entry.
    * Configuration entry must contain few required fields, such as `class`. See `src/main/resources/reference.conf`.
+   *
+   * 如果为空, 会在 akka.persistence.snapshot-store.plugin 找配置
    */
   def snapshotPluginId: String = ""
 

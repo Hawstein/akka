@@ -41,6 +41,12 @@ private[persistence] object Eventsourced {
  * INTERNAL API.
  *
  * Scala API and implementation details of [[PersistentActor]] and [[AbstractPersistentActor]].
+ *
+ * [[PersistentActor]] 和 [[AbstractPersistentActor]] 的具体实现
+ *
+ * 其中, [[Snapshotter]] 继承了 [[akka.actor.Actor]]
+ *
+ * Actor 的 receive 方法的具体实现在 [[PersistentActor.receive]] 中, 即为 [[Eventsourced.receiveCommand]]
  */
 private[persistence] trait Eventsourced extends Snapshotter with PersistenceStash with PersistenceIdentity with PersistenceRecovery {
   import JournalProtocol._
@@ -63,6 +69,10 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
   private var sequenceNr: Long = 0L
   private var _lastSequenceNr: Long = 0L
 
+  /**
+   * 这里用 null 是安全的, 因为在 [[aroundPreStart]] 中初始化了
+   * 该变量用以表示当前的状态, 它有三种可能的状态: [[waitingRecoveryPermit]], [[recoveryStarted]], [[recovering]]
+   */
   // safely null because we initialize it with a proper `waitingRecoveryPermit` state in aroundPreStart before any real action happens
   private var currentState: State = null
 
@@ -82,6 +92,7 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
 
   /**
    * Returns `persistenceId`.
+   * snapshotterId 直接使用了 persistenceId
    */
   override def snapshotterId: String = persistenceId
 
@@ -156,6 +167,14 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
       event.getClass.getName, seqNr, persistenceId, cause.getMessage)
   }
 
+  /**
+   * 暂存当前消息. 如果超出了暂存区的大小, 则根据不同的策略, 采取不同的行动:
+   * 1. DiscardToDeadLetterStrategy: 发到 deadLetter
+   * 2. ReplyToStrategy: 向发送消息者返回一条信息, 当前的消息就直接丢掉
+   * 3. ThrowOverflowExceptionStrategy: 抛出异常
+   *
+   * internalStash 调用的是 [[akka.actor.StashSupport.stash()]], 因此无需把当前消息传递给它, stash 方法中可以取出当前的消息
+   */
   private def stashInternally(currMsg: Any): Unit =
     try internalStash.stash() catch {
       case e: StashOverflowException ⇒
@@ -173,11 +192,21 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
   private def unstashInternally(all: Boolean): Unit =
     if (all) internalStash.unstashAll() else internalStash.unstash()
 
+  /**
+   * 收到 [[RecoveryPermitter.RecoveryPermitGranted]] 后, 开始恢复过程
+   * 1. 先更新当前状态到 [[recoveryStarted]]
+   * 2. 加载 snapshot, 经由 [[akka.persistence.snapshot.SnapshotStore]] 然后再到 [[recoveryStarted]] 中
+   */
   private def startRecovery(recovery: Recovery): Unit = {
     changeState(recoveryStarted(recovery.replayMax))
     loadSnapshot(snapshotterId, recovery.fromSnapshot, recovery.toSequenceNr)
   }
 
+  /**
+   * 覆盖默认的 [[akka.actor.Actor.aroundReceive]] 方法, 默认实现是把 message 应用到偏函数 receive 上, 并考虑 unhandle 的情况
+   * 这里的覆盖实现是: 用当前状态 currentState 的 stateReceive 来处理.
+   * 根据当前状态的不同, 收到消息的处理方式也会不同. 在用 receive 来处理 message 的上下文中可以插入别的操作.
+   */
   /** INTERNAL API. */
   override protected[akka] def aroundReceive(receive: Receive, message: Any): Unit =
     currentState.stateReceive(receive, message)
@@ -187,11 +216,16 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
     require(persistenceId ne null, s"persistenceId is [null] for PersistentActor [${self.path}]")
 
     // Fail fast on missing plugins.
+    // 以下的使用来检查对应的 plugin 是否存在, 不存在的话快速失败
     val j = journal; val s = snapshotStore
     requestRecoveryPermit()
     super.aroundPreStart()
   }
 
+  /**
+   * 向 [[RecoveryPermitter]] 请求, 然后进入 waitingRecoveryPermit 状态,
+   * 等待 [[RecoveryPermitter]] 的 [[RecoveryPermitter.RecoveryPermitGranted]] 信息
+   */
   private def requestRecoveryPermit(): Unit = {
     extension.recoveryPermitter.tell(RecoveryPermitter.RequestRecoveryPermit, self)
     changeState(waitingRecoveryPermit(recovery))
@@ -396,6 +430,9 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
     internalStash.prepend(clearStash())
   }
 
+  /**
+   * 有 3 个状态: [[waitingRecoveryPermit]], [[recoveryStarted]], [[recovering]]
+   */
   private trait State {
     def stateReceive(receive: Receive, message: Any): Unit
     def recoveryRunning: Boolean
@@ -408,6 +445,12 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
    * of recoveries that can be in progress at the same time. When receiving
    * `RecoveryPermitGranted` it switches to `recoveryStarted` state
    * All incoming messages are stashed.
+   *
+   * 初始状态.
+   *
+   * 只有收到 RecoveryPermitGranted, 才开始进入 recoveryStarted 状态.
+   * 在这个状态下, 所有收到的其它消息(other), 都暂存起来 [[stashInternally]]
+   *
    */
   private def waitingRecoveryPermit(recovery: Recovery) = new State {
 
@@ -430,6 +473,10 @@ private[persistence] trait Eventsourced extends Snapshotter with PersistenceStas
    * All incoming messages are stashed.
    *
    * @param replayMax maximum number of messages to replay.
+   *
+   * 处理加载的 snapshot, 该 snapshot 将以 [[SnapshotOffer]] 消息发出, 并由 receiveRecover 来处理, 因此需要用户来定义怎么处理 SnapshotOffer 消息
+   * 然后切换当前状态到 [[recovering]]
+   * 最后发送 [[ReplayMessages]] 消息给 [[journal]]
    */
   private def recoveryStarted(replayMax: Long) = new State {
 
